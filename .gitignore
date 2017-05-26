@@ -1,0 +1,17 @@
+# IDE files
+.idea
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# No CVS directories
+CVS/
+
+# My notebook files
+notebook
