@@ -1,11 +1,11 @@
 ##
 ## Makefile for coseg project
 ##
-VERSION=0.2.2
+VERSION=0.2.3
 INSTALLDIR=/usr/local/coseg-${VERSION}
 
 ## Basic
-CC = cc -O4 -lm
+CC = cc -g -O4 -lm
 ## A nice memory leak checker:
 #CC = bgcc -O4 -fbounds-checking -lm
 

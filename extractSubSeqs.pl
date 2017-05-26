@@ -26,6 +26,9 @@
 # ChangeLog
 #
 #     $Log: extractSubSeqs.pl,v $
+#     Revision 1.7  2016/11/11 23:46:04  rhubley
+#       - Cleaning up perl scripts
+#
 #     Revision 1.6  2012/11/02 23:02:19  rhubley
 #       - Cleaned up and consolidated EM routines.
 #       - Moved final minCount check to prune routine.
@@ -114,8 +117,18 @@ Robert Hubley <rhubley@systemsbiology.org>
 use strict;
 use Getopt::Long;
 use Data::Dumper;
-## TODO: Mention this needs changing
-use lib "/usr/local/RepeatMasker";
+use FindBin;
+use lib $FindBin::RealBin;
+use CosegConfig;
+use lib $CosegConfig::REPEATMASKER_DIR;
+if ( ! -s "$CosegConfig::REPEATMASKER_DIR/FastaDB.pm" )
+{
+  print "\nError: Could not locate the required module \"FastaDB.pm\" from\n";
+  print   "       the RepeatMasker directory ( $CosegConfig::REPEATMASKER_DIR ).\n";
+  print   "       Perhaps this path is old or incorrect. Please check the\n";
+  print   "       configuration file CosegConfig.pm before continuing.\n\n";
+  exit;
+}
 use FastaDB;
 
 

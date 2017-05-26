@@ -21,10 +21,10 @@ Background
 
  There are a few caveats:  
 
-  - The input sequences must be full length alignments to a *single*
+  * The input sequences must be full length alignments to a *single*
     reference sequence.
 
-  - The longer the sequence the harder this problem is to solve.  Shorter
+  * The longer the sequence the harder this problem is to solve.  Shorter
     families or short subregions are recommended for this process.
 
  Current Authors: Robert Hubley <rhubley@systemsbiology.org>
@@ -216,13 +216,17 @@ Running using your own data
      with "-l div", "-l pv", "-l c" accordingly.
 
 
-Experimental
-============
+Utility Programs
+================
 
-Using the refiner contained in the RepeatModeler package one may
-submit subfamily members for consensus refinement.  There is an
-experimental script called refineConsSeqs.pl that will run this
-analysis:
+refineConsSeqs.pl  
+
+Coseg uses a rather crude method of building consensus sequences
+for each subfamily it finds.  This script makes use of the refiner
+script in the RepeatModeler package to build and refine consensus
+sequences based on subfamily members assigned by coseg.
+
+Usage:
 
   1. From the directory where your coseg results can be
      found run:
@@ -232,43 +236,72 @@ analysis:
      Where "mycosegrun" is the prefix of the coseg run.
 
 
+extractSubSeqs.pl
+
+A utility script to extract the sequences for a given coseg subfamily.
+This uses the coseg input sequence file along with the *.assign file
+to determine which sequences belong to the queried subfamily number.
+
+Usage:
+
+
+
 
 Version History
 ---------------
-  0.2.2:  - Create a *.svg graph file without the need
+  -.-.-:
+           TODO: Print out a multiple alignment of the
+           subfamilies showing only the signficant
+           differences ( i.e. the "." and "i" method )   
+           and grouping them by tree/div order.
+            
+          * Fixed the *.svg "<svg>" tag so that the files
+            will directly load in HTML5 web browsers.
+          * Calculation of divergence has been improved(?). 
+            We now use kimura substition distance with CpG 
+            site accounting modifications instead of the
+            mixed substition and indel calculation.
+          * Require that the diagnostic mutations which 
+            broke up the parent family are maintained
+            after allowing all elements to be re-assigned.
+            Currently this is only coded for bi-mutations.
+            This is a major change and deserves to have
+            a flag allowing one not to use it.
+
+  0.2.2:  * Create a *.svg graph file without the need
             to download/use GraphViz.  The layout is
             handled by an adaptation of algorithm 
             developed by Atze van der Ploeg. The SVG
             file produced supports various labeling 
             options and subfamily details displayed
             when a node is hovered over.
-          - Changed the default colormap for the graph
+          * Changed the default colormap for the graph
             output.  Now warm colors denote more diverged
             subfamilies in the tree while cooler colors
             represent younger subfamilies.  To restore
             the original color scheme use the new "-o" 
             flag to coseg.
-          - Added parameter to control the minimum distance
+          * Added parameter to control the minimum distance
             between diagnostic sites. Now the user can override
             the historic value of 10 using the -u flag.
-          - Improved error reporting when there is a mismatch
+          * Improved error reporting when there is a mismatch
             between an individual sequence length and the 
             consensus length in the input files.
-          - Fixed a bug that caused coseg to segfault.
-          - Added experimental script refineConsSeqs.pl.  This
+          * Fixed a bug that caused coseg to segfault.
+          * Added experimental script refineConsSeqs.pl.  This
             script uses the RepeatModeler application to build
             and refine the consensus sequences for each 
             subfamily.
-  0.2.1:  - Improved code documentation
-          - Single mutation significance cutoff ( SIGMATHRESH ) was 
+  0.2.1:  * Improved code documentation
+          * Single mutation significance cutoff ( SIGMATHRESH ) was 
             pre-calculated for Alkes Alu analysis and hardcoded.  This
             version calculates the correct sigma cutoff using the length
             of the input sequence.
-          - Fixed bug with implementation of Siegel's pValue
+          * Fixed bug with implementation of Siegel's pValue
             calculation which caused a segfault -- found by Neal Platt.
-          - Switched default pvalue method to Andy Siegel's method and
+          * Switched default pvalue method to Andy Siegel's method and
             provided a new "-k" switch to use Alkes Price's method.
-          - Fixed bug where the program was exiting when calculations 
+          * Fixed bug where the program was exiting when calculations 
             fell below the precision of the machine ( epsilon ). Message
             given was "Below epsilon..." and the runcoseg.pl script
             moved on even though coseg failed.

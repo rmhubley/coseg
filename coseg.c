@@ -182,6 +182,19 @@ char *outAssignFile;
 char *subfamFile;
 // end for singlemut
 
+// 
+// EXPERIMENTAL : New EM for intermediate check of sites
+//
+  int *** l_count;
+  int *** l_counti;
+  int * l_assign;
+  char ** l_pattern;
+  char ** l_patterni;
+//
+// End Experimental
+//
+
+
 
 static char *options[] = {
   "\nusage: %s [-m #] [-t] [-k] [-d] [-u #] -c <consensus file>\n",
@@ -463,8 +476,12 @@ main(int argc, char **argv)
   printf("\nTHERE ARE %d SUBFAMILIES IN SCAFFOLD\n", S);
 
   we_want_best_pvalue = 1;
-  // Build the tree and calculate the pvalues based on the tree structure.
-  build_MST(NULL);
+
+  // Build tree for scaffold subfamilies only
+  //   - This calculates the p_value for scafffold members distinctly
+  //     from the one contianing the scaffold and single point mutations.
+  //     Saves results in mstLogPValues() for use by build_MST_full().
+  build_MST_scaffold(NULL);
 
   numScaffolds = S;
 
@@ -474,7 +491,7 @@ main(int argc, char **argv)
 
   // Singlemut stuff
   printf("\nRunning single mutation algorithm...\n");
-  assign_to_pattern_singlemut();
+  assign_to_pattern_singlemut(); // M-step first?
   lastScaffoldIndex = S - 1;
 
   for (s = 0; s < S; s++)
@@ -483,10 +500,11 @@ main(int argc, char **argv)
       edges[s][t] = 0;
   }
 
-  /*
-     add internal 1-mutations (along existing edge of tree)  
-   */
+  // 
+  // add internal 1-mutations (along existing edge of tree)  
+  // 
   build_singlemut_MST();
+
 
   /*
      add new 1-mutations 
@@ -499,7 +517,7 @@ main(int argc, char **argv)
     mutsigma[S] = bestmutsigma;
     build_new_subfamily2();
   }
-  build_MST2(graphVizFile);
+  build_MST_full(graphVizFile);
   print_subfamilies(S);
 
   print_assign(outAssignFile);
@@ -1270,6 +1288,88 @@ allocate_memory()
       exit(1);
     }
   }
+
+// 
+// EXPERIMENTAL : New EM for intermediate check of sites
+//
+  if ((l_count = (int ***) malloc(MAXS * sizeof(*l_count))) == NULL)
+  {
+    printf("Out of memory\n");
+    exit(1);
+  }
+  for (s = 0; s < MAXS; s++)
+  {
+    if ((l_count[s] = (int **) malloc(conLen * sizeof(*l_count[s]))) == NULL)
+    {
+      printf("Out of memory\n");
+      exit(1);
+    }
+    for (x = 0; x < conLen; x++)
+    {
+      if ((l_count[s][x] = (int *) malloc(5 * sizeof(*l_count[s][x]))) == NULL)
+      {
+        printf("Out of memory\n");
+        exit(1);
+      }
+    }
+  }
+
+  if ((l_counti = (int ***) malloc(MAXS * sizeof(*l_counti))) == NULL)
+  {
+    printf("Out of memory\n");
+    exit(1);
+  }
+  for (s = 0; s < MAXS; s++)
+  {
+    if ((l_counti[s] = (int **) malloc(conLen * sizeof(*l_counti[s]))) == NULL)
+    {
+      printf("Out of memory\n");
+      exit(1);
+    }
+    for (x = 0; x < conLen; x++)
+    {
+      if ((l_counti[s][x] = (int *) malloc(2 * sizeof(*l_counti[s][x]))) == NULL)
+      {
+        printf("Out of memory\n");
+        exit(1);
+      }
+    }
+  }
+  if ((l_assign = (int *) malloc(N * sizeof(int))) == NULL)
+  {
+    printf("Out of memory\n");
+    exit(1);
+  }
+  if ((l_pattern = (char **) malloc(MAXS * sizeof(*l_pattern))) == NULL)
+  {
+    printf("Out of memory\n");
+    exit(1);
+  }
+  if ((l_patterni = (char **) malloc(MAXS * sizeof(*l_patterni))) == NULL)
+  {
+    printf("Out of memory\n");
+    exit(1);
+  }
+  for (s = 0; s < MAXS; s++)
+  {
+    if ((l_pattern[s] = (char *) malloc(conLen * sizeof(*l_pattern[s]))) == NULL)
+    {
+      printf("Out of memory\n");
+      exit(1);
+    }
+    if ((l_patterni[s] = (char *) malloc(conLen * sizeof(*l_patterni[s]))) == NULL)
+    {
+      printf("Out of memory\n");
+      exit(1);
+    }
+  }
+ 
+ 
+// 
+// Done EXPERIMENTAL
+//
+
+
 }                               // void allocate_memory(...
 
 
@@ -1499,10 +1599,34 @@ compute_tri_bestmut()
     for (a = 0; a < 5; a++)
       existingval[x][a] = 0;
   }
+
+  // Setting existing val for all subfamilies
+  //printf("Setting existingval\n");
   for (s = 0; s < S; s++)
-  {
     for (x = 0; x < conLen; x++)
       existingval[x][pattern[s][x]] = 1;
+
+  // debug
+  if ( 0 ) 
+  {
+    for (s = 0; s < S; s++)
+    {
+      printf("Subfamily %d: ", s );
+      for (x = 0; x < conLen; x++)
+      {
+        if ( pattern[s][x] == 0 )
+          printf("A");
+        else if ( pattern[s][x] == 1 )
+          printf("C");
+        else if ( pattern[s][x] == 2 )
+          printf("G");
+        else if ( pattern[s][x] == 3 )
+          printf("T");
+        else 
+          printf("-");
+      }
+      printf("\n");
+    }
   }
 
   // Create a sorted ( by subfamily ) list of elements.
@@ -1636,6 +1760,9 @@ compute_tri_bestmut()
                       && (xxx > 0) && (pattern[SS][xxx - 1] == 1))
                     continue;
                 }
+// TODO: Consider why we don't run EM to check that these three mutations
+//       stay after rebuilding the local consensus pair....
+//
                 // Don't consider this pair if it can't qualify as a group.
                 if (bicount[SS][xx][aa][xxx][aaa] < minCount ||
                     bicount[SS][x][a][xxx][aaa] < minCount)
@@ -1742,7 +1869,7 @@ compute_tri_bestmut()
     printf("  -- total pvalue calculations = %ld\n", pvalueCount);
     printf("  -- total tri count calculations = %ld\n", triCountCalcs);
   }
-}                               // compute_tri_bestmut(...
+} // compute_tri_bestmut(...
 
 
 //
@@ -1771,11 +1898,34 @@ compute_bestmut()
     for (a = 0; a < 5; a++)
       existingval[x][a] = 0;
   }
+
+  // Setting existing value
   for (s = 0; s < S; s++)
-  {
     for (x = 0; x < conLen; x++)
       existingval[x][pattern[s][x]] = 1;
+
+if ( 0 ) 
+{
+  for (s = 0; s < S; s++)
+  {
+printf("Subfamily %d: ", s );
+    for (x = 0; x < conLen; x++)
+    {
+if ( pattern[s][x] == 0 )
+  printf("A");
+else if ( pattern[s][x] == 1 )
+  printf("C");
+else if ( pattern[s][x] == 2 )
+  printf("G");
+else if ( pattern[s][x] == 3 )
+  printf("T");
+else 
+  printf("-");
+    }
+printf("\n");
   }
+}
+
   bestmutpvalue = PVALUETHRESH;
   printf("  Searching for significant double mutation:");
   for (SS = 0; SS < S; SS++)    /* try splitting subfamily SS */
@@ -1812,6 +1962,7 @@ compute_bestmut()
         //{
         if (existingval[x][a] == 1)
           continue;
+
         //}
         //else 
         //{
@@ -1932,13 +2083,34 @@ compute_bestmut()
               continue;
 
             /*
-               now, build local{count,assigncount,bicount,pattern,assign} 
+             * Now, build local{count,assigncount,bicount,pattern,assign} 
+             *
+             * TODO: How does this differ from the build_subfamily EM 
+             * algorithm?  Why does it resolve the two sites
+             * here but often not at the end?
+             *  
+             *   - localpattern[0] original family consensus
+             *   - localpattern[1] two diagnostic mutations
+             *       - localpattern_to_localassign()
+             *       - localasign_to_localpattern()
              */
             build_local(x, a, xx, aa, SS);      /* local{pattern,assign} */
             if (localpattern[1][x] != a)
               continue;         /* NO GOOD */
             if (localpattern[1][xx] != aa)
               continue;         /* NO GOOD */
+
+            // RMH: Experimental
+            // TODO: Optimize
+            if ( S > 0 )
+            {
+              int status = build_local_global( x, a, xx, aa, SS );
+              if ( status == 0 )
+              {
+                printf("Diagnostic mutations failed global check...continuing\n");
+                continue;
+              }
+            }
 
             /*
                ALL NEW check pos x val a split against other subfamilies 
@@ -1961,7 +2133,8 @@ compute_bestmut()
             }
             if (pvalue >= bestmutpvalue)
               continue;         /* inside aa loop */
-
+          
+  
             /*
                WE HAVE A NEW WINNER! 
              */
@@ -1969,6 +2142,17 @@ compute_bestmut()
             //       " count12 = %d, totalcount=%d,  pvalue = %lf\n", SS, 
             //       x, num_to_char(pattern[SS][x]),num_to_char(a),
             //       xx, num_to_char(pattern[SS][xx]),num_to_char(aa), count12, totalcount, pvalue );
+            //if ( x >= 3 && x < conLen - 3 && xx >= 3 && xx < conLen )
+           // {
+            //  printf("Parent1: %c%c%c %c %c%c%c\n", num_to_char(pattern[SS][x-3]), num_to_char(pattern[SS][x-2]), 
+            //          num_to_char(pattern[SS][x-1]), num_to_char(pattern[SS][x]), num_to_char(pattern[SS][x+1]),
+             //         num_to_char(pattern[SS][x+2]), num_to_char(pattern[SS][x+3]) );
+             // printf("...avoid: a = %c = %d existingval[x][a] = %d\n", num_to_char(a), a, existingval[x][a]);
+             // printf("Parent2: %c%c%c %c %c%c%c\n", num_to_char(pattern[SS][xx-3]), num_to_char(pattern[SS][xx-2]), 
+             //         num_to_char(pattern[SS][xx-1]), num_to_char(pattern[SS][xx]), num_to_char(pattern[SS][xx+1]),
+             //         num_to_char(pattern[SS][xx+2]), num_to_char(pattern[SS][xx+3]) );
+              //printf("...avoid: aa = %c = %d existingval[xx][aa] = %d\n", num_to_char(aa), aa, existingval[xx][aa]);
+           // }
 
             bestmutpvalue = pvalue;
             bestmutSS = SS;
@@ -2076,6 +2260,7 @@ compute_localbicount(int SS)    /* localcount and localbicount */
   interesting = malloc((conLen + 1) * sizeof(int));
   dist2nextinteresting = malloc((conLen + 1) * sizeof(int));
 
+
   for (x = 0; x < conLen; x++)
     interesting[x] = 0;
   for (s = 0; s < S; s++)
@@ -2146,6 +2331,8 @@ compute_localbicount(int SS)    /* localcount and localbicount */
       }
     }
   }
+  free( interesting );
+  free( dist2nextinteresting );
 }
 
 
@@ -2794,6 +2981,9 @@ build_new_tri_subfamily()       /* parent, S, assign, pattern_to_assign */
     }
   }
 
+// Does nothing......for EM 
+if ( 0 ) 
+{
   // Initialy breakup up subfamily SS into SS & S.
   for (n = 0; n < N; n++)
   {
@@ -2820,6 +3010,7 @@ build_new_tri_subfamily()       /* parent, S, assign, pattern_to_assign */
   }
   assigncount[SS] = localassigncount[0];
   assigncount[S] = localassigncount[1];
+}
 
   for (x = 0; x < conLen; x++)
   {
@@ -2830,9 +3021,46 @@ build_new_tri_subfamily()       /* parent, S, assign, pattern_to_assign */
   }
   S++;
 
+  // This calls the EM routine which works directly
+  // on pattern/patterni[][] and assign[].  It 
+  // adjusts all elements and all consensi.
   run_em();
 
+
+if ( 0 ) 
+{
+  printf("Validating Initial Diagnostic Sites: %d: ",bestmutx);
+  if(pattern[S-1][bestmutx] != bestmuta) 
+    printf("No  ");
+  else
+    printf("Yes ");
+  printf("%d: ", bestmutxx);
+  if(pattern[S-1][bestmutxx] != bestmutaa) 
+    printf("No\n");
+  else
+    printf("Yes\n");
+  printf("%d: ", bestmutxxx);
+  if(pattern[S-1][bestmutxxx] != bestmutaaa) 
+    printf("No\n");
+  else
+    printf("Yes\n");
+
+  printf("Validation of diagnostic distribution:\n");
+  printf("   - pos=%d: ", bestmutx );
+  for ( x = 0; x < 5; x++ )
+    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutx][x] );
+  printf("\n");
+  printf("   - pos=%d: ", bestmutxx );
+  for ( x = 0; x < 5; x++ )
+    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxx][x] );
+  printf("\n");
+  printf("   - pos=%d: ", bestmutxxx );
+  for ( x = 0; x < 5; x++ )
+    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxxx][x] );
+  printf("\n");
 }
+ 
+} // build_new_tri_subfamily
 
 
 //
@@ -2841,6 +3069,8 @@ build_new_tri_subfamily()       /* parent, S, assign, pattern_to_assign */
 //   Move ( subtract/add ) counts from old subfamily to new datastructure
 //   Initialize new subfamily pattern datastructure
 //
+//  Modifies:
+//      count[], counti[], and bicount[]
 void
 build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
 {
@@ -2903,12 +3133,43 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
     fprintf(stdout, "\n");
   }
 
+// Special DEBUG
+if ( 0 ) 
+{
+    fprintf(stdout, "Current Cons: ");
+    for (x = 0; x < conLen; x++)
+    {
+      if (x == bestmutx || x == bestmutxx)
+        if ( pattern[SS][x] == 4 )
+          fprintf(stdout, "^");
+        else
+          fprintf(stdout, "%c", toupper(num_to_char(pattern[SS][x])));
+      else
+        fprintf(stdout, "%c", num_to_char(pattern[SS][x]));
+    }
+    int numWithMut = 0;
+    int numTotal = 0;
+    for (n = 0; n < N; n++)
+    {
+      if (assign[n] == SS)
+      {
+        numTotal++;
+        if ( ele[n][bestmutx] == bestmuta && ele[n][bestmutxx] == bestmutaa )
+          numWithMut++;
+      }
+    }
+    fprintf(stdout, "Parent size %d subset with both muts %d,", numTotal, numWithMut );
+}
+// End special debug
+
 
   // Initialize the new subfamily count/bicount datastructure
   for (x = 0; x < conLen; x++)
   {
     for (a = 0; a < 5; a++)
       count[S][x][a] = 0;
+    for (a = 0; a < 2; a++ )
+      counti[S][x][a] = 0;
   }
   for (x = minDist; x < conLen; x++)
   {
@@ -2930,6 +3191,7 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
     // should move over to the new subfamily.
     if ((assign[n] == SS) && (localassign[n] == 1))
     {
+if ( 0 ) {
       // If so...move it's counts
       for (x = 0; x < conLen; x++)
       {
@@ -2949,13 +3211,16 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
         }
       }
       assign[n] = S;
+}
       totalAssigned++;
     }
   }
-  assigncount[SS] = localassigncount[0];
-  assigncount[S] = localassigncount[1];
+//  assigncount[SS] = localassigncount[0];
+//  assigncount[S] = localassigncount[1];
 
   //printf("build_new_subfamily(): totalAssigned = %d assigncount[%d] = %d, assigncount[%d] = %d\n", totalAssigned, SS, assigncount[SS], S, assigncount[S] );
+  //printf("build_new_subfamily(): totalAssigned = %d assigncount[%d] = %d, assigncount[%d] = %d\n", totalAssigned, SS, localassigncount[0], S, localassigncount[1] );
+
   for (x = 0; x < conLen; x++)
   {
     pattern[SS][x] = localpattern[0][x];
@@ -2965,12 +3230,38 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
   }
   S++;
 
+  // Now pattern[] and assign[] both are up-to-date
+  //
   // Reconsider the assignment of all sequences to subfamily consensus
   // patterns 0-S, redevelop cosensus subfamily consensus sequences 0-S,
   // reconsider the assignment of all sequences.......basically cycle
   // until everything settles down.
   run_em();
 
+
+if ( 0 ) 
+{
+  printf("Validating Initial Diagnostic Sites: %d: ",bestmutx);
+  if(pattern[S-1][bestmutx] != bestmuta) 
+    printf("No  ");
+  else
+    printf("Yes ");
+  printf("%d: ", bestmutxx);
+  if(pattern[S-1][bestmutxx] != bestmutaa) 
+    printf("No\n");
+  else
+    printf("Yes\n");
+  printf("Validation of diagnostic distribution:\n");
+  printf("   - pos=%d: ", bestmutx );
+  for ( x = 0; x < 5; x++ )
+    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutx][x] );
+  printf("\n");
+  printf("   - pos=%d: ", bestmutxx );
+  for ( x = 0; x < 5; x++ )
+    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxx][x] );
+  printf("\n");
+}
+ 
   if (VERBOSE > 4)
   {
     fprintf(stdout, "\nFinal Family Sizes: ");
@@ -2982,6 +3273,19 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
 
 }
 
+/*
+ * EM Algorithm for to-date built subfamily consensi
+ *
+ * This EM run is done after a subfamily has been 
+ * added to the set and involves all subfamilies in
+ * the competition.  This means that the new subfamily
+ * just added can steal members from other subfamilies
+ * other than it's parent.
+ *
+ * NOTE: After this is run there is currently no check to
+ * see if the last added subfamily did maintain the two 
+ * co-segregating sites.
+ */
 void
 run_em()
 {
@@ -2990,8 +3294,15 @@ run_em()
 
   SS = bestmutSS;
 
+  // TODO: Hmmmm...why why why? I wish I had documented this!
   // RMH added 11/7/2012
-  assign_to_pattern();          /* M-step */
+  //
+  // Take element assignments and rebuild consensi stored
+  // in pattern[][] and patterni[][]
+  //
+  //  This shouldn't do anything because assignments and pattern 
+  //  are up-to-date.
+  //assign_to_pattern();          /* M-step */
 
   if (VERBOSE & 4)
   {
@@ -3014,6 +3325,9 @@ run_em()
   totdist = 1000000000;
   for (iter = 0; iter < MAXITER; iter++)
   {
+    // Using the patterns determine which pattern
+    // each element is closest to ( edit distance ) and
+    // alter the assign[] array accordingly.
     pattern_to_assign();        /* E-step */
 
     if (VERBOSE & 4)
@@ -3034,6 +3348,8 @@ run_em()
       fprintf(stdout, "\n");
     }
 
+    // TODO: Doesn't this lead to the counts being out-of-step with the patterns?  Should we roll-back the assignment changes?
+    //       Or...probably Alkes considered the pattern authoritative and the assignment should be derived whenever needed.
     if (totdist >= oldtotdist)
       break;
 
@@ -3075,7 +3391,8 @@ run_em()
   }
   // RMH: 11/2/2012 : Shouldn't the pattern now reflect the last step
   //                  of reassignment???  Adding this
-  assign_to_pattern();          /* M-step */
+  //TODO: RMH:....um..no
+  //assign_to_pattern();          /* M-step */
 
   if (VERBOSE & 4)
   {
@@ -3100,7 +3417,15 @@ run_em()
 }
 
 
-
+/* 
+ * M step for EM algorithm
+ *
+ * For all subfamilies rebuild consensus based on 
+ * current assignments.  
+ * 
+ * Uses: count[s][x][a]
+ *       pattern[s][x]
+ */
 void
 assign_to_pattern()             /* M-step */
 {
@@ -3141,6 +3466,13 @@ assign_to_pattern()             /* M-step */
   // singlemut then goes on to calc many more things.
 }
 
+
+/*
+ * E step of EM algorithm
+ *
+ * Alter element assignments based on edit distance from
+ * any of the ( possibly altered ) subfamily consensi.
+ */
 void
 pattern_to_assign()             /* E-step */
 {
@@ -3432,6 +3764,235 @@ build_tri_local(int thisx, int thisa, int thisxx, int thisaa,
   }
 }
 
+// EXPERIMENTAL
+void blc_pattern_to_assign()
+{
+  int mindist, n, s, x, a, b, dist;
+  // blc_pattern_to_assign
+  oldtotdist = totdist;
+  totdist = 0;
+  for (n = 0; n < N; n++)
+  {
+    mindist = 1000000000;
+    // s = S is the new subfamily being considered
+    for (s = 0; s <= S; s++)
+    {
+      dist = 0;
+      for (x = 0; x < conLen; x++)
+      {
+        a = ele[n][x];
+        if ( a != l_pattern[s][x] )
+          dist++;
+        b = elei[n][x];
+        if ( b != l_patterni[s][x] )
+          dist++;
+      }
+      // Subtract off CpG mutations from dist 
+      if (DISALLOW_CG)
+      {
+        for (x = 0; x < conLen - 1; x++)
+        { 
+          // CpG
+          if ((l_pattern[s][x] == 1) && (l_pattern[s][x + 1] == 2))
+          { 
+            if (ele[n][x] == 3)
+              dist--;
+            else if (ele[n][x + 1] == 0)
+              dist--;
+          }
+          // TpG
+          else if ((l_pattern[s][x] == 3) && (l_pattern[s][x + 1] == 2)) 
+          { 
+            if (ele[n][x] == 1)
+              dist--;
+          }
+          // TpG
+          else if ((l_pattern[s][x] == 1) && (l_pattern[s][x + 1] == 0))
+          { 
+            if (ele[n][x + 1] == 2)
+              dist--;
+          }
+        }
+      }
+//printf("Distance ele=%d S=%d: %d\n", n, s, dist);
+      if (dist < mindist)
+      {
+        mindist = dist;
+        l_assign[n] = s;
+      }
+    } // for ( s = 0
+    totdist += mindist;
+  } // for( n = 0
+}
+
+// EXPERIMENTAL
+void
+blc_assign_to_pattern(int thisx, int thisa, int thisxx, int thisaa, int SS)
+{
+  int maxcount,x, n, s, a, b;
+
+  int ac = 0;
+
+  // s=S is the new subfamily being proposed.
+  for (s = 0; s <= S; s++)
+  {
+    for (x = 0; x < conLen; x++)
+    {
+      for (a = 0; a < 5; a++)
+        l_count[s][x][a] = 0;
+      for (b = 0; b < 2; b++)
+        l_counti[s][x][b] = 0;
+    }
+  }
+
+  // Count each cluster's columns
+  for (n = 0; n < N; n++)
+  {
+    s=l_assign[n];
+    if ( s == S )
+      ac++;
+    for (x = 0; x < conLen; x++)
+    {
+      a = ele[n][x];
+      b = elei[n][x];
+      l_count[s][x][a]++;
+      l_counti[s][x][b]++;
+    }
+  }
+/*
+printf("Assigned count = %d out of N = %d \n",ac, N);
+printf("Updated diagnostic distribution:\n");
+printf("   - pos=%d: ", thisx );
+for ( x = 0; x < 5; x++ )
+  printf("%c=%d, ", num_to_char(x), l_count[S][thisx][x] );
+printf("\n");
+printf("   - pos=%d: ", thisxx );
+for ( x = 0; x < 5; x++ )
+  printf("%c=%d, ", num_to_char(x), l_count[S][thisxx][x] );
+printf("\n");
+*/
+ 
+  for (s = 0; s <= S; s++)
+  {
+    for (x = 0; x < conLen; x++)
+    {
+      maxcount = -1;
+      for (a = 0; a < 5; a++)
+      {
+        if (l_count[s][x][a] > maxcount)
+        {
+          maxcount = l_count[s][x][a];
+          l_pattern[s][x] = a;
+        }
+      }
+
+      maxcount = -1;
+      for (b = 0; b < 2; b++)
+      {
+        if (l_counti[s][x][b] > maxcount)
+        {
+          maxcount = l_counti[s][x][b];
+          l_patterni[s][x] = b;
+        }
+      }
+    }
+  }
+}
+
+
+
+// 
+// Experimental: The existing method for picking a significant
+//               diagnostic site set includes a test to see if
+//               the sites remain in the final consensus after
+//               running EM on the members of the parent subfamily.
+//               After that process the code commits to those sites
+//               and runs EM over all elements and all subfamilies.
+//               In this EM implementation we also check ( before
+//               committing ) that the new subfamily consensus
+//               keeps the diagnostic sites after doing a global
+//               pattern_to_assign/assign_to_pattern ( ie. one round
+//               of EM ) on only the new consensus and by not altering
+//               the actual global state datastructures.
+//
+int
+build_local_global(int thisx, int thisa, int thisxx, int thisaa, int SS)
+{
+  int n, s, w, x, a, b, mindist, dist;
+  int iter;
+  int maxcount = 0;
+
+
+  // Assume that localpattern/i[1] contains the proposed
+  // subfamily consensus and localpattern/i[0] contains
+  // the revised parent family consensus.
+  for (s = 0; s <= S; s++)
+  {
+    //if ( s == S )
+    //  printf("Proposed Cons:\n");
+    //else
+    //  printf("sub %d:\n", s);
+    for (x = 0; x < conLen; x++)
+    {
+      if ( s == S )
+      {
+        l_pattern[s][x] = localpattern[1][x];
+        l_patterni[s][x] = localpatterni[1][x];
+        //printf("%c",num_to_char(l_pattern[s][x]));
+      }else if ( s == SS )
+      {
+        l_pattern[s][x] = localpattern[0][x];
+        l_patterni[s][x] = localpatterni[0][x];
+        //printf("%c",num_to_char(l_pattern[s][x]));
+      }else
+      {
+        l_pattern[s][x] = pattern[s][x];
+        l_patterni[s][x] = patterni[s][x];
+        //printf("%c",num_to_char(l_pattern[s][x]));
+      }
+    }
+    //printf("\n");
+  }
+
+  // Clear the l_assign[]
+  for (n = 0; n < N; n++)
+    l_assign[n] = 0;
+
+  totdist = 100000000;
+  blc_pattern_to_assign();
+
+  for (iter = 0; iter < MAXITER; iter++)
+  {
+    blc_assign_to_pattern(thisx, thisa, thisxx, thisaa, SS);
+    blc_pattern_to_assign();
+    if (totdist >= oldtotdist)
+        break;
+  }
+
+  //printf("iterations performed = %d\n", iter );
+
+  /*
+  if (l_pattern[S][thisx] != thisa)
+    printf("Missing site %d is %c should be %c\n", thisx, num_to_char(l_pattern[S][thisx]), num_to_char(thisa));
+  if (l_pattern[S][thisxx] != thisaa)
+    printf("Missing site %d is %c should be %c\n", thisxx, num_to_char(l_pattern[S][thisxx]), num_to_char(thisaa));
+  */
+
+  /*
+  printf("Final: ");
+  for (x = 0; x < conLen; x++)
+    printf("%c",num_to_char(l_pattern[S][x]) );
+  printf("\n");
+  */
+  
+  int retVal = 0;
+  if (l_pattern[S][thisx] == thisa && l_pattern[S][thisxx] == thisaa)
+    retVal = 1;
+
+  return( retVal );
+}
+
+
 
 
 /* local{pattern,assign} */
@@ -3440,6 +4001,9 @@ build_local(int thisx, int thisa, int thisxx, int thisaa, int SS)
 {
   int x, iter;
 
+//printf( "****Starting build_local***** : Seeding split with %d:%c and "
+//       "%d:%c\n", thisx, num_to_char(thisa), 
+//      thisxx, num_to_char(thisaa) );
 
   /*
      Step 1: build localpattern 
@@ -3473,11 +4037,32 @@ build_local(int thisx, int thisa, int thisxx, int thisaa, int SS)
     if (localtotdist >= localoldtotdist)
       break;
   }
-  //printf("build_local: em iter reached %d\n",iter);
+  //printf("build_local: em iter reached %d out of max %d\n",iter, MAXITER);
   //printf( "build_local: Final %d:%c and "
   //        "%d:%c\n", thisx, num_to_char(localpattern[1][thisx]), 
   //        thisxx, num_to_char(localpattern[1][thisxx]) );
 
+  /*
+  int s;
+  for (s = 0; s < 2; s++)
+  {
+    printf("localpattern[%d] count = %d\n", s, localassigncount[s] );
+    for (x = 0; x < conLen; x++)
+      printf("%c",num_to_char(localpattern[s][x]));
+    printf("\n");
+  }
+  
+  printf("Diagnostic distribution:\n");
+  printf("   - pos = %d: ", thisx );
+  for ( x = 0; x < 5; x++ )
+    printf("%c=%d, ", num_to_char(x), localcount[1][thisx][x] );
+  printf("\n");
+  printf("   - pos = %d: ", thisxx );
+  for ( x = 0; x < 5; x++ )
+    printf("%c=%d, ", num_to_char(x), localcount[1][thisxx][x] );
+  printf("\n");
+  */
+ 
 
 }
 
@@ -3870,6 +4455,8 @@ split_pvaluelocal(int SS, int s, int w, double pvaluehope)
     }
   }
 
+  free ( consensus );
+
   return answer;
 }
 
@@ -3892,7 +4479,10 @@ print_assign(char *filename)
   fclose(fp);
 }
 
-
+// prune_subfamilies()
+//
+// Input: assigncount[]
+// Output: distance[][] 
 void
 prune_subfamilies()
 {
@@ -4071,7 +4661,7 @@ prune_subfamilies()
     prune_subfamilies();
     return;
   }
-}
+} // prune_subfamilies()
 
 void
 compute_numerdenom(int s)
@@ -4124,6 +4714,7 @@ union_tri_pvalue(int label)
   interesting = malloc((conLen + 1) * sizeof(int));
   consensus = malloc((conLen + 1) * sizeof(char));
   bestpvalue = 1.0;
+
 
   // find first subfamily with the label we are looking for
   for (s = 0; s < S; s++)
@@ -4434,6 +5025,9 @@ union_tri_pvalue(int label)
     }
   }
 
+  free( interesting );
+  free( consensus );
+
   if (we_want_best_pvalue == 0)
   {
     printf("Best pvalue found was too low ( %lf ) returning 1.0\n",
@@ -4448,9 +5042,14 @@ union_tri_pvalue(int label)
 
 
 
-//
+// union_pvalue():
 // A low ( <= PVALUETHRESHOLD ) indicates that these two or more subfamilies
 // can stand on their own.  Higher pvalue indicates they can't.
+//
+//   NOTE: This routine uses a global array ( labels[] ) which holds
+//         one label per subfamily.  It uses this along with the scalar "label"
+//         to determine which subfamilies ( 2 or more ) will be used in the
+//         calculation. 
 //
 double
 union_pvalue(int label)
@@ -4649,6 +5248,9 @@ union_pvalue(int label)
     }
   }
 
+  free( interesting );
+  free( consensus );
+
   if (we_want_best_pvalue == 0)
     return 1.0;
   else
@@ -4748,9 +5350,9 @@ compute_distance(int s, int t, int insPenalty)
   // Alkes originally used a greater distance for indels than for mismatches.
   // The strange thing is that the penalty was really high ( 100 ) for 
   // each deletion ( ie "--" = 202 ) and a constant ( also 101 ) for any
-  // length insertion. It only seems to be used to calculation the distance 
+  // length insertion. It only seems to be used to calculate the distance 
   // for the the final pvalue scaffold calculations and not in the building
-  // proccess.
+  // process.
   //
   // Scaffold build process: mismatch/complete_insertion/deletion=-1
   //   for(x=0; x<L; x++)
@@ -4837,13 +5439,24 @@ compute_distance(int s, int t, int insPenalty)
 }
 
 
+// 
+// build_MST_scaffold() - originally "build_MST"
 //
 // Build the Minimum Spanning Tree ( MST ) of the scaffold subfamilies
-//   Seed the building processes with the oldest subfamily ( cluster with 
-//   the most average divergence of it's members from it's consensus ) and
-//   build a MST using consensus distances. 
+// Seed the building processes with the oldest subfamily ( cluster with 
+// the most average divergence of it's members from it's consensus ) and
+// build a MST using consensus hamming (almost) distances. 
+//
+//  Input:  distance[][] ( set by prune_subfamilies ) 
+//
+//  Reuse:  Clears and re-defines parent[]
+//
+//  Output: parent[]
+//          mstLogPValues[]
+//          Optionaly saves MST to a file.
+//
 void
-build_MST(char *filename)
+build_MST_scaffold(char *filename)
 {
   int s, t, s0, done[S], numdone, thiss, thist, mindist, x;
   int root;
@@ -4874,6 +5487,7 @@ build_MST(char *filename)
   //   in the cluster.
   for (s = 0; s < S; s++)
     done[s] = 0;
+
   s0 = 0;
   s0age = 0.0;
   for (s = 0; s < S; s++)
@@ -4892,9 +5506,14 @@ build_MST(char *filename)
   }
   done[s0] = 1;
 
-  // RMH
-  // Document disabling: for(s=0; s<S; s++) parent[s] = -1;
-  parent[s0] = -1;
+  // RMH:
+  // parent[] array is being reused here.  It was previously used to hold 
+  //          the source subfamily for each derived subfamily. Here it 
+  //          appears to be used to hold the minimum spanning tree structure.
+  //parent[s0] = -1;
+  //  RMH: Why was this full-clear disabed in my version?
+  for(s=0; s<S; s++) parent[s] = -1;
+
   root = s0;
   mstLogPValues[root] = 0;
 
@@ -4907,14 +5526,14 @@ build_MST(char *filename)
     thiss = -1;
     thist = -1;
     mindist = 1000000000.0;
-    for (s = 0; s < S; s++)     /* want s done */
+    for (s = 0; s < S; s++)     
     {
-      // Only connect to existing nodes in the tree
+      // Only want existing nodes in the tree
       if (done[s] == 0)
         continue;
-      for (t = 0; t < S; t++)   /* want t not done */
+      for (t = 0; t < S; t++)  
       {
-        // Only take new nodes
+        // Only use unassigned nodes
         if (done[t] == 1)
           continue;             /* guarantees t != s */
         if (distance[s][t] < mindist)
@@ -4937,11 +5556,7 @@ build_MST(char *filename)
     numdone++;
     parent[t] = s;
 
-    // Strange.  This is a DS setup by Alkes which basically marks
-    // 2 or more subfamilies for use in a union calculation.  In the context
-    // of this program it appears to only set 2 at a time....so perhaps
-    // we should just pass these as parameters rather than allocating a 
-    // whole array.
+    // Setup array used by untion_tri_pvalue() and union_pvalue()
     for (s0 = 0; s0 < S; s0++)
       labels[s0] = 0;
     labels[s] = 1;
@@ -4963,7 +5578,8 @@ build_MST(char *filename)
     if ((s == root) && (pvalue < mstLogPValues[root]))
       mstLogPValues[root] = pvalue;
     if (fp)
-      fprintf(fp, "        %d -> %d [label = \"%e\"];\n", s, t, exp(pvalue));
+      fprintf(fp, "        %d -> %d [label = \"p=%e,c=%d\"];\n", s, t, 
+              exp(pvalue), assigncount[t]);
     if (VERBOSE)
       print_subfamily(t);
   }
@@ -4974,6 +5590,23 @@ build_MST(char *filename)
     fprintf(fp, "}\n");
     fclose(fp);
   }
+
+  // RMH: Sanity Check
+  int rootCnt = 0;
+  for(s=0; s<S; s++) 
+  {
+    if ( parent[s] == -1 )
+    {
+      printf("Tree root = subfamily-%d\n", s );
+      rootCnt++;
+    }
+  }
+  if ( rootCnt > 1 )
+  {
+    printf("Error: tree has more than one root!!!\n");
+    exit(1);
+  }
+
 }
 
 
@@ -5175,7 +5808,6 @@ assign_to_pattern_singlemut()
 {
   int n, s, x, a, b, maxcount, c, d;
 
-  //printf("assign_to_pattern_singlemut()\n");
   for (s = 0; s < S; s++)
   {
     for (x = 0; x < conLen; x++)
@@ -5628,29 +6260,58 @@ pValueStr(double logpvalue)
 }
 
 
-// from singlemut
+//
+// build_MST_full() - originaly build_MST2 from fill_scaffold.c
+//
+//   Build a minimum spanning tree (MST) using scaffold +
+//   single point mutation derived subfamilies.  
+//
+//   In this tree build the insertion penalty is changes
+//   to SINGLE_MUTATION_INSPENALTY ( currently ) which differs
+//   from the scaffold only MST build which uses 
+//   MULTIPLE_MUTATION_INSPENALTY
+//
+//   
+//
+//   Recomputes distance[][] using different insertion pentalty
+//
+//  Uses:
+//      edges[][]    : overwrites previous values
+//      distance[][] : overwrites previous values
+//                        NOTE: It is currently hardcoded to use
+//                              SINGLE_MUTATION_INSPENALTY.  If this
+//                              is dropped back into service *before*
+//                              single mutations are calculated reconsider
+//                              making this a parameter.
+//      parent[]     : overwrites previous values and redefines
+//                     the meaning of "parent".
+//
+//  OUTPUT
+//      parent[] 
+//      mstLogPValues[]
+//
 void
-build_MST2(char *filename)
+build_MST_full(char *filename)
 {
   int s, t, s0, done[S], numdone, thiss, thist, mindist, x;
   int isleaf[S], nleaves;
-  double sage, s0age;
+  double sage, s0age, pvalue;
   FILE *fp;
-  double mutrate[MAXS], mutrate_noCpG[MAXS];
+  double mutrate[MAXS], mutrate_CpGMod[MAXS];
   double diameter, hue;
 
   // Get mutation rates
-  computeMutationRates(mutrate, mutrate_noCpG);
+  computeMutationRatesKimura(mutrate, mutrate_CpGMod);
   double minMutRate = 1.0;
   double maxMutRate = 0.0;
   int maxCount = 0;
   double mutRateRange = 0.0;
   for (s = 0; s < S; s++)
   {
-    if (mutrate[s] > maxMutRate)
-      maxMutRate = mutrate[s];
-    if (mutrate[s] < minMutRate)
-      minMutRate = mutrate[s];
+    if (mutrate_CpGMod[s] > maxMutRate)
+      maxMutRate = mutrate_CpGMod[s];
+    if (mutrate_CpGMod[s] < minMutRate)
+      minMutRate = mutrate_CpGMod[s];
     if (assigncount[s] > maxCount)
       maxCount = assigncount[s];
   }
@@ -5676,13 +6337,17 @@ build_MST2(char *filename)
     }
   }
 
-  if ((fp = fopen(filename, "w")) == NULL)
+  if ( filename )
   {
-    printf("Could not open input file %s\n", filename);
-    exit(1);
+    // create the viz file
+    if ((fp = fopen(filename, "w")) == NULL)
+    {
+      printf("Could not open input file %s\n", filename);
+      exit(1);
+    }
+    fprintf(fp, "digraph G {\n");
+    fprintf(fp, "        size=\"8,10\";\n");
   }
-  fprintf(fp, "digraph G {\n");
-  fprintf(fp, "        size=\"8,10\";\n");
 
   /*
      choose the oldest subfamily s0 
@@ -5706,49 +6371,42 @@ build_MST2(char *filename)
     }
   }
   done[s0] = 1;
-  numdone = 1;
-  parent[s0] = -1;
+// RMH:
+// was   parent[s0] = -1;
+  for (s = 0; s < S; s++)
+    parent[s] = -1;
 
-  // Circle area is proportional to the size of the subfamily 
-  diameter = (double) 2.0 *sqrt((double) assigncount[s0] / (double) maxCount);
+  // Optional output data to graph file.
+  if ( fp ) 
+  {
+    // Circle area is proportional to the size of the subfamily 
+    diameter = (double) 2.0 *sqrt((double) assigncount[s0] / (double) maxCount);
+  
+    // Color heatmap ranges from 0-0.6 ( or 0-216 degrees )
+    if (useOriginalGraphColors)
+      hue = ((mutrate_CpGMod[s0] - minMutRate) * (double) 0.6) / mutRateRange;
+    else
+      hue =
+        ((double) 1.0 -
+         ((mutrate_CpGMod[s0] - minMutRate) / mutRateRange)) * (double) 0.6;
 
-  // Color heatmap ranges from 0-0.6 ( or 0-216 degrees )
-  if (useOriginalGraphColors)
-    hue = ((mutrate[s0] - minMutRate) * (double) 0.6) / mutRateRange;
-  else
-    hue =
-      ((double) 1.0 -
-       ((mutrate[s0] - minMutRate) / mutRateRange)) * (double) 0.6;
-
-
-/*
-    if (s < numScaffolds)
-      fprintf(fp, "Subfamily %d: count %d mutrate %.03f/%.03f "
-              "mstLogPValue %f\n", s, ccount[s], mutrate[s],
-              mutrate2[s], mstLogPValues[s]);
+    if (s0 <= lastScaffoldIndex)
+      fprintf(fp,
+              "        %d [shape=circle, label=\"sub%d\\nc=%d\\npv=%s\\ndiv=%.3f\", style=filled,"
+              " height=%.1f, width=%.1f, color=\"%.2f,0.9,0.6\"", s0, s0,
+              assigncount[s0], pValueStr(mstLogPValues[s0]), mutrate_CpGMod[s0],
+              diameter, diameter, hue);
     else
       fprintf(fp,
-              "Subfamily %d: count %d mutrate %.03f/%.03f sigma %f, logpvalue %f\n",
-              s, ccount[s], mutrate[s], mutrate2[s], mutsigma[s],
-              sigmage_to_logpvalue(mutsigma[s]));
-*/
+              "        %d [shape=circle, label=\"sub%d\\nc=%d\\npv=%s\\ndiv=%.3f\", style=solid,"
+              " height=%.1f, width=%.1f, color=\"%.2f,0.15,0.95\"", s0, s0,
+              assigncount[s0], pValueStr(sigmage_to_logpvalue(mutsigma[s0])),
+              mutrate_CpGMod[s0], diameter, diameter, hue);
 
+    fprintf(fp, "];\n");
+  } // if ( fp )
 
-  if (s0 <= lastScaffoldIndex)
-    fprintf(fp,
-            "        %d [shape=circle, label=\"sub%d\\nc=%d\\npv=%s\\ndiv=%.3f\", style=filled,"
-            " height=%.1f, width=%.1f, color=\"%.2f,0.9,0.6\"", s0, s0,
-            assigncount[s0], pValueStr(mstLogPValues[s0]), mutrate[s0],
-            diameter, diameter, hue);
-  else
-    fprintf(fp,
-            "        %d [shape=circle, label=\"sub%d\\nc=%d\\npv=%s\\ndiv=%.3f\", style=solid,"
-            " height=%.1f, width=%.1f, color=\"%.2f,0.15,0.95\"", s0, s0,
-            assigncount[s0], pValueStr(sigmage_to_logpvalue(mutsigma[s0])),
-            mutrate[s0], diameter, diameter, hue);
-
-  fprintf(fp, "];\n");
-
+  numdone = 1;
   while (numdone < S)
   {
     thiss = -1;
@@ -5782,46 +6440,71 @@ build_MST2(char *filename)
     numdone++;
     parent[t] = s;
 
-    // Circle area is proportional to the size of the subfamily 
-    diameter =
-      (double) 2.0 *sqrt((double) assigncount[t] / (double) maxCount);
+    if ( fp ) 
+    {
+      // Circle area is proportional to the size of the subfamily 
+      diameter =
+        (double) 2.0 *sqrt((double) assigncount[t] / (double) maxCount);
+  
+      // Color heatmap ranges from 0-0.6 ( or 0-216 degrees )
+      if (useOriginalGraphColors)
+        hue = ((mutrate_CpGMod[t] - minMutRate) * (double) 0.6) / mutRateRange;
+      else
+        hue =
+          ((double) 1.0 -
+           ((mutrate_CpGMod[t] - minMutRate) / mutRateRange)) * (double) 0.6;
 
-    // Color heatmap ranges from 0-0.6 ( or 0-216 degrees )
-    if (useOriginalGraphColors)
-      hue = ((mutrate[t] - minMutRate) * (double) 0.6) / mutRateRange;
-    else
-      hue =
-        ((double) 1.0 -
-         ((mutrate[t] - minMutRate) / mutRateRange)) * (double) 0.6;
-
-    if (t <= lastScaffoldIndex)
-      fprintf(fp,
-              "        %d [shape=circle, label=\"sub%d\\nc=%dpv=%s\\ndiv=%.3f\", style=filled,"
-              " height=%.1f, width=%.1f, color=\"%.2f,0.9,0.6\"", t, t,
-              assigncount[t], pValueStr(mstLogPValues[t]), mutrate[t],
-              diameter, diameter, hue);
-    else
-      fprintf(fp,
-              "        %d [shape=circle, label=\"sub%d\\nc=%dpv=%s\\ndiv=%.3f\", "
-              "style=solid, height=%.1f, width=%.1f, color=\"%.2f,0.15,0.95\"",
-              t, t, assigncount[t],
-              pValueStr(sigmage_to_logpvalue(mutsigma[t])), mutrate[t],
-              diameter, diameter, hue);
-    fprintf(fp, "];\n");
-    fprintf(fp, "        %d -> %d;\n", s, t);
+      if (t <= lastScaffoldIndex)
+        fprintf(fp,
+                "        %d [shape=circle, label=\"sub%d\\nc=%dpv=%s\\ndiv=%.3f\", style=filled,"
+                " height=%.1f, width=%.1f, color=\"%.2f,0.9,0.6\"", t, t,
+                assigncount[t], pValueStr(mstLogPValues[t]), mutrate_CpGMod[t],
+                diameter, diameter, hue);
+      else
+        fprintf(fp,
+                "        %d [shape=circle, label=\"sub%d\\nc=%dpv=%s\\ndiv=%.3f\", "
+                "style=solid, height=%.1f, width=%.1f, color=\"%.2f,0.15,0.95\"",
+                t, t, assigncount[t],
+                pValueStr(sigmage_to_logpvalue(mutsigma[t])), mutrate_CpGMod[t],
+                diameter, diameter, hue);
+      fprintf(fp, "];\n");
+      fprintf(fp, "        %d -> %d;\n", s, t);
+    } // if ( fp )
     edges[s][t] = 1;
     isleaf[s] = 0;
-  }
+  } // while ( ...
 
-  fprintf(fp, "}\n");
-  fclose(fp);
+  // Complete file output if necessary
+  if ( fp ) 
+  {
+    fprintf(fp, "}\n");
+    fclose(fp);
+  }
 
   nleaves = 0;
   for (s = 0; s < S; s++)
     nleaves += isleaf[s];
   fprintf(outFP, "%d subfamilies overall (%d leaves in tree)\n", S, nleaves);
   printf("%d subfamilies overall (%d leaves in tree)\n", S, nleaves);
-}
+
+  // RMH: Sanity Check
+  int rootCnt = 0;
+  for(s=0; s<S; s++) 
+  {
+    if ( parent[s] == -1 )
+    {
+      printf("Tree root = subfamily-%d\n", s );
+      rootCnt++;
+    }
+  }
+  if ( rootCnt > 1 )
+  {
+    printf("Error: tree has more than one root!!!\n");
+    exit(1);
+  }
+
+} // build_MST_full(...
+
 
 // from singlemut
 double
@@ -5846,7 +6529,7 @@ sigmage_to_logpvalue(double sigmage)
   ans = log(ans);
   ans -= sigmage * sigmage / 2.0;
   return ans;
-}
+} // sigmage_to_logpvalue(...
 
 // from singlemut obviously 
 // TODO: merger with mst?
@@ -5883,7 +6566,7 @@ build_singlemut_MST()
   {
     if (assigncount[s] == 0)
     {
-      printf("OOPS build_MST s=%d assigncount=0\n", s);
+      printf("OOPS build_MST_full s=%d assigncount=0\n", s);
       exit(1);
     }
     sage = 0.0;
@@ -6193,7 +6876,6 @@ build_singlemut_MST()
 }
 
 
-
 // from singlemut obviously
 void
 build_new_singlemut_subfamily()
@@ -6250,26 +6932,96 @@ build_new_singlemut_subfamily()
 
 }
 
+
+//
+// computeMutationRatesKimura()
+//
+//   Calculate the Kimura substition divergence for each 
+//   subfamily.
+//
+//   DNA Transitions/Transversions
+//
+//         A -V- C
+//         |\   /|
+//         I  V  I
+//         |/   \|
+//         G -V- T
+//
+//   CpG: Transition mutations are 10-15x more likely 
+//        at CpG sites in many mammalian species.
+//
+//             CpG---deamination-->TG
+//             CpG---deamination-->CA
+//
+//    Arian's scoring method:
+//       CpG to:
+//          AA = Vi   CA = i   GA = Vi   TA = I
+//          AC = VV   CC = V   GC = VV   TC = iV
+//          AG = V    CG =     GG = V    TG = i
+//          AT = VV   CT = V   GT = VV   TT = iV
+//
+//     Where:  V = 1    - Transversion
+//             i = 1/10 - Transition
+//             I = 1    - Transition
+//
+//     **SPECIAL IMPLEMENTATION**
+//     In addition the consnensus sequence is crudely 
+//     generated ( ie. CpG sites are not inferred ).
+//     Therefore it makes sense to also treat CA and
+//     TG sites as possible CpG sites and treat 
+//     TG->CA and CA->TG as a single transition event.
+//
+//     Then plug in the integer transversion count and real
+//     transition counts into the 2-parameter Kimura divergence
+//     formula.
+//
+//          K = - 1/2 ln(( 1 - 2p -q) * sqrt(1-2q))
+//        Where:
+//          p = transition proportion
+//          q = transversion proportion
+//          
+//     Alternatively Arian reports the simple divergence throwing
+//     out single transitions at CpG sites and collapsing two
+//     transitions at a CpG site into one. 
+//
+//
+//   Previous implementation ( and original ) calculated mutrate
+//   as: 
+//
+//      - In build_scaffold.c if the consensus is CG/TG/CA do not 
+//        record any mutation at either of the bases.
+//      - In fill_scaffold.c if the consensus is CG/TG/CA do not 
+//        record any mutation at the first base and the skip the second
+//        entirely ( mutrate[] ) or skip both sites ( mutrate2[] ).
+//        Reported in subfamilies.seq as "mutrate mutrate[]/mutrate2[]".
+//      - Include deletions individually and insertion of any size
+//        as a single penalty.
+//
+//   We no longer include insertions/deletions in the calculation except
+//   to invalidate a CG/TG/CA in the consensus if there is an insertion
+//   likely ( patterni[][] ) in between the two bases.
+//   
+// Updated 11/2016 RMH
+//
 // NOTE: Expects two arrays of MAXS size
 void
-computeMutationRates(double *mutrate, double *mutrate_noCpG)
+computeMutationRatesKimura(double *mutrate, double *mutrate_CpGMod)
 {
   int ccount[MAXS];
-  int nmut[MAXS], ntot[MAXS], nmut_noCpG[MAXS], ntot_noCpG[MAXS];
+  int trans[MAXS], transv[MAXS];
+  double trans_CpGMod[MAXS];
+  double logOperand, kimura;
   int n, s, x, totcount;
+  double p, q;
 
-  /*
-   * compute count AND mutrate of each subfamily 
-   */
+  // Initialize counters
   for (s = 0; s < S; s++)
   {
     ccount[s] = 0;
-    nmut[s] = 0;
-    nmut_noCpG[s] = 0;
-    ntot[s] = 0;
-    ntot_noCpG[s] = 0;
+    trans[s] = 0;
+    trans_CpGMod[s] = 0;
+    transv[s] = 0;
   }
-
   totcount = 0;
 
   for (n = 0; n < N; n++)
@@ -6281,35 +7033,71 @@ computeMutationRates(double *mutrate, double *mutrate_noCpG)
     ccount[s] += 1;
     for (x = 0; x < conLen; x++)
     {
-      if (ele[n][x] != pattern[s][x])
-        nmut[s]++;
-      if (elei[n][x] != patterni[s][x])
-        nmut[s]++;
-      ntot[s]++;
-      // Looks like this is filtering out CpG sites...
-      if ((x < conLen - 1) && (pattern[s][x] == 1)
-          && (pattern[s][x + 1] == 2))
+      // Is this a CpG site? NOTE: Not considering sites with intervening insertions
+      //     0=a,1=c,2=g,3=t,4=-
+      if ( x < conLen - 1 && patterni[s][x] != 1 )
       {
-        x++;
-        continue;
+        if ( (pattern[s][x] == 1) && (pattern[s][x + 1] == 2) )  // CpG
+        {
+          // Transversions = 0,1,2 Transitions = 0, 1/10, 1
+          int tmpTrans = 0;
+
+          // C Mutations
+          if ( ele[n][x] == 3 )  // C->T Transition
+             tmpTrans++;
+          if ( ele[n][x] == 0 || ele[n][x] == 2 ) // C->A, C->G Transversions
+             transv[s]++;
+
+          // G Mutations
+          if ( ele[n][x+1] == 0 )  // G->A Transition
+             tmpTrans++;
+          if ( ele[n][x+1] == 1 || ele[n][x+1] == 3 ) // G->C, G->T Transversions
+             transv[s]++;
+
+          if ( tmpTrans == 2 )
+            trans_CpGMod[s] += 1;
+          else if ( tmpTrans == 1 )
+            trans_CpGMod[s] += 0.1;
+
+          trans[s] += tmpTrans;
+
+          x++;
+          continue;
+        }else if ( (pattern[s][x] == 3) && (pattern[s][x + 1] == 2) )  // TpG
+        {
+          // CA = 1 transition -- all other normal accounting
+          if ( ele[n][x] == 1 || ele[n][x+1] == 0 )
+          {
+            trans_CpGMod[s] += 1;
+            trans[s] += 2;
+            x++;
+            continue;
+          }
+        }else if ( (pattern[s][x] == 1) && (pattern[s][x + 1] == 0) )  // CpA
+        {
+          // TG = 1 transition -- all other normal accounting
+          if ( ele[n][x] == 3 || ele[n][x+1] == 2 )
+          {
+            trans_CpGMod[s] += 1;
+            trans[s] += 2;
+            x++;
+            continue;
+          }
+        }
       }
-      if ((x < conLen - 1) && (pattern[s][x] == 1)
-          && (pattern[s][x + 1] == 0))
+           
+      if ( ( pattern[s][x] == 0 && ele[n][x] == 2 ) || // A->G trans
+           ( pattern[s][x] == 1 && ele[n][x] == 3 ) || // C->T trans
+           ( pattern[s][x] == 2 && ele[n][x] == 0 ) || // G->A trans
+           ( pattern[s][x] == 3 && ele[n][x] == 1 ) )  // T->C trans
       {
-        x++;
-        continue;
+             trans_CpGMod[s]++;
+             trans[s]++;
       }
-      if ((x < conLen - 1) && (pattern[s][x] == 3)
-          && (pattern[s][x + 1] == 2))
+      else if ( pattern[s][x] != ele[n][x] )
       {
-        x++;
-        continue;
+             transv[s]++;
       }
-      if (ele[n][x] != pattern[s][x])
-        nmut_noCpG[s]++;
-      if (elei[n][x] != patterni[s][x])
-        nmut_noCpG[s]++;
-      ntot_noCpG[s]++;
     }
   }
   for (s = 0; s < S; s++)
@@ -6317,23 +7105,42 @@ computeMutationRates(double *mutrate, double *mutrate_noCpG)
     if (ccount[s] == 0)
     {
       mutrate[s] = 0.0;
-      mutrate_noCpG[s] = 0.0;
+      mutrate_CpGMod[s] = 0.0;
       continue;
     }
-    mutrate[s] = ((double) (nmut[s])) / ((double) (ntot[s]));
-    mutrate_noCpG[s] =
-      ((double) (nmut_noCpG[s])) / ((double) (ntot_noCpG[s]));
-  }
-}
 
-// NOTE: This was originally just a singlemut subroutine.  Now
-//       it prints out all subfamilies
+    p = (double)trans[s] / ( ccount[s] * conLen );
+    q = (double)transv[s] / ( ccount[s] * conLen );
+    kimura = 0.0;
+    logOperand = ( ( 1 - ( 2 * p ) - q ) * 
+                   pow(( 1 - ( 2 * q ) ),0.5 ) );
+    if ( logOperand > 0.0 )
+      kimura = fabs( ( -0.5 * log( logOperand ) ) );
+
+    mutrate[s] = kimura;
+
+    kimura = 0.0;
+    q = (double)trans_CpGMod[s] / ( ccount[s] * conLen );
+    logOperand = ( ( 1 - ( 2 * p ) - q ) * 
+                   pow(( 1 - ( 2 * q ) ),0.5 ) );
+    if ( logOperand > 0 )
+      kimura = fabs( ( -0.5 * log( logOperand ) ) );
+
+    mutrate_CpGMod[s] = kimura;
+  }  
+} // computeMutationRatesKimura()
+
+
+//
+// print_subfamilies()
+//
+//   Generate the final *.subfamilies output file.
+//
 void
 print_subfamilies(int S)
 {
   int n, s, x, a, b, freq, maxfreq, totcount, t, r;
   int rdist[MAXS], sdist[MAXS], hit[MAXS], mindist;
-  int ccount[MAXS];
   int nmut[MAXS], ntot[MAXS], nmut2[MAXS], ntot2[MAXS];
   double mutrate[MAXS], mutrate2[MAXS];
   FILE *fp;
@@ -6347,7 +7154,7 @@ print_subfamilies(int S)
     exit(1);
   }
 
-  computeMutationRates(mutrate, mutrate2);
+  computeMutationRatesKimura(mutrate, mutrate2);
 
   /*
      print subfamilies 
@@ -6362,12 +7169,12 @@ print_subfamilies(int S)
   {
     if (s < numScaffolds)
       fprintf(fp, "Subfamily %d: count %d mutrate %.03f/%.03f "
-              "mstLogPValue %f\n", s, ccount[s], mutrate[s],
+              "mstLogPValue %f\n", s, assigncount[s], mutrate[s],
               mutrate2[s], mstLogPValues[s]);
     else
       fprintf(fp,
               "Subfamily %d: count %d mutrate %.03f/%.03f sigma %f, logpvalue %f\n",
-              s, ccount[s], mutrate[s], mutrate2[s], mutsigma[s],
+              s, assigncount[s], mutrate[s], mutrate2[s], mutsigma[s],
               sigmage_to_logpvalue(mutsigma[s]));
 
 

@@ -405,7 +405,7 @@ while ( <VIZ> )
     # Node data line
     my $nodeIdx = $1;
     my $nodeData = $2;
-    my ( $label, $height, $color );
+    my ( $label, $height, $color, $isScaffold );
     if ( $nodeData =~ /label="([^"]+)"/ )
     {
       # Convert "\n" used in Graphviz labels to a comma separated 
@@ -431,22 +431,24 @@ while ( <VIZ> )
         # tripple mutations are darker and more saturated than
         # nodes with only single point mutations:
         # 
-        # Double/Tripple:  H     S     V
+        # Single:          H     S     V
         #                0-1.0  .15   .95
         #    In SVG HSL :  H     S     L
         #                0-216  58.7%  87.6%
         #
-        # Single        :  H     S     V
+        # Double/Tripple:  H     S     V
         #                0-1.0  .9    .6
         #    In SVG HSL :  H     S     L
         #                0-216  82.1%  32.9%
         #
         if ( $2 == 0.15 )
         {
+          $isScaffold = 0;
           $color = ($1*360) . ",58.7%,87.6%";
         }
         else
         {
+          $isScaffold = 1;
           $color = ($1*360) . ",82.1%,32.9%";
         }
       }
@@ -454,6 +456,7 @@ while ( <VIZ> )
     $nodes[$nodeIdx] = { 'h' => $height, 
                          'w' => $height,
                          'label' => $label,
+                         'isScaffold' => $isScaffold,
                          'color' => $color };
   }elsif ( /^\s*(\d+)\s+->\s+(\d+);\s*$/ )
   {
@@ -480,7 +483,8 @@ if ( $minHeight < $minNodeHeight  )
 }
 &layout( $nodes[$root], 20, 20 );
 my ( $boundingHeight, $boundingWidth ) = findExactHeightWidth( $nodes[$root], 0, 0);
-print OUT "<svg height=\"100%\" width=\"100%\" viewbox=\"0 0 " . ($boundingWidth+5) . " " . ($boundingHeight+5) . "\">\n";
+#print OUT "<svg height=\"100%\" width=\"100%\" viewbox=\"0 0 " . ($boundingWidth+5) . " " . ($boundingHeight+5) . "\">\n";
+print OUT "<svg xmlns=\"http://www.w3.org/2000/svg\" height=\"" . ($boundingHeight+5) . "px\" width=\"" . ($boundingWidth+5) . "px\" viewbox=\"0 0 " . ($boundingWidth+5) . " " . ($boundingHeight+5) . "\">\n";
 printSVG( $nodes[$root], $options{'l'} );
 print OUT "</svg>\n";
 close OUT; 
@@ -497,12 +501,14 @@ close OUT;
 #             'h'        => 70,
 #             'label'    => "sub3,c=100,pv=3e-18,div=0.311",
 #             'color'    => "238,58.7%,87.6%",
+#             'isScaffold' => 1,
 #             'children' => [
 #                             {
 #                               'w'        => 40,
 #                               'h'        => 40,
 #                               'label'    => "sub1,c=83,pv=3e-18,div=0.311",
 #                               'color'    => "19,58.7%,87.6%",
+#                               'isScaffold' => 1,
 #                               'children' => [
 #                                               {
 #                                                 'w'        => 10,
@@ -545,7 +551,15 @@ sub printSVG
       . ( $tree->{'y'} + ( $tree->{'h'} / 2 ) + 1 )
       . "\" r=\""
       . ( $tree->{'w'} / 2 )
-      .  "\" stroke=\"black\" stroke-width=\"1\" style=\"fill:hsl(" . $tree->{'color'} . ");\">\n";
+      .  "\" stroke=\"black\" ";
+  if ( $tree->{'isScaffold'} == 1 )
+  {
+    print OUT "stroke-width=\"5\" ";
+  }else
+  {
+    print OUT "stroke-width=\"1\" "; 
+  }
+  print OUT "style=\"fill:hsl(" . $tree->{'color'} . ");\">\n";
   print OUT "<title>" . $tree->{'label'} . "</title></circle>\n";
 
   my $label = undef;

@@ -22,7 +22,7 @@ double compute_pvalue( int totalcount, int count1, int count2,
 double compute_score( int totalcount, int count1, int count2, int count12 );
 void build_new_tri_subfamily() ;
 void build_new_subfamily2();
-void build_MST2( char *filename );
+void build_MST_full( char *filename );
 double sigmage_to_logpvalue( double sigmage );
 void build_singlemut_MST();
 void build_new_singlemut_subfamily();
@@ -50,7 +50,7 @@ double union_pvalue( int label );
 void merge_subfamilies( int label );
 double compute_sigma( int totalcount, int count1, double emutfrac );
 int compute_distance( int s, int t, int insPenalty );
-void build_MST( char *filename );
+void build_MST_scaffold( char *filename );
 void print_subfamily( int s );
 void build_tri_local( int thisx, int thisa, int thisxx, int thisaa,
                       int thisxxx, int thisaaa, int SS );
@@ -62,6 +62,9 @@ double compute_tri_pvalue( int totalcount, int count1, int count2,
                            int count23, int count123, double fudge );
 double compute_tri_score( int totalcount, int count1, int count2, int count3,
                           int count123 );
-void computeMutationRates( double *mutrate, double *mutrate_noCpG );
+void computeMutationRatesKimura(double *mutrate, double *mutrate_CpGMod);
+
+int
+build_local_global(int thisx, int thisa, int thisxx, int thisaa, int SS);
 
  
