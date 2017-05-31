@@ -67,6 +67,9 @@ extern const char *Version;
 #define MULTIPLE_MUTATION_INSPENALTY 1  // Penalty for a single insertion
                                         //   during the bi/tri mutation
                                         //   search phase.
+#define FORCE_DIAGNOSTIC_POS 0          // Experimental code to force preservation
+                                        // of diagnostic positions. Experimental...not
+                                        // validated -- only coded for bi-mutations.
 
 #define PVALUETHRESH log(SCAFFOLD_PVALUE_THRESH)        // Convert threshold to
                                                  //     logspace
@@ -185,11 +188,11 @@ char *subfamFile;
 // 
 // EXPERIMENTAL : New EM for intermediate check of sites
 //
-  int *** l_count;
-  int *** l_counti;
-  int * l_assign;
-  char ** l_pattern;
-  char ** l_patterni;
+int *** l_count;
+int *** l_counti;
+int * l_assign;
+char ** l_pattern;
+char ** l_patterni;
 //
 // End Experimental
 //
@@ -478,7 +481,7 @@ main(int argc, char **argv)
   we_want_best_pvalue = 1;
 
   // Build tree for scaffold subfamilies only
-  //   - This calculates the p_value for scafffold members distinctly
+  //   - This calculates the p_value for scaffold members distinctly
   //     from the one contianing the scaffold and single point mutations.
   //     Saves results in mstLogPValues() for use by build_MST_full().
   build_MST_scaffold(NULL);
@@ -595,6 +598,7 @@ initialize_subfamily0()
       }
     }
   }
+
   // Initialize count/bicount/assign arrays
   for (n = 0; n < N; n++)
   {
@@ -607,7 +611,9 @@ initialize_subfamily0()
     for (x = minDist; x < conLen; x++)
     {
       for (xx = 0; xx <= x - minDist; xx++)
+      {
         bicount[0][x][ele[n][x]][xx][ele[n][xx]]++;
+      }
     }
     assign[n] = 0;
   }
@@ -1436,7 +1442,6 @@ build_sequence(char *filename)
         sequenceSize += 50;
         Sxsequence = realloc(Sxsequence, (sequenceSize + 1) * sizeof(char));
       }
-      //if(c > 64) Sxsequence[i++] = char_to_num(c);
       if (c > 64)
         Sxsequence[i++] = c;
       for (j = 0; ((c = getc(fp)) != '\n') && !feof(fp); j++)
@@ -1446,7 +1451,6 @@ build_sequence(char *filename)
           sequenceSize += 50;
           Sxsequence = realloc(Sxsequence, sequenceSize * sizeof(char));
         }
-        //if(c > 64) Sxsequence[i++] = char_to_num(c); 
         if (c > 64)
           Sxsequence[i++] = c;
       }
@@ -1529,6 +1533,7 @@ build_eles(char *filename)
   double sum;
   char c;
   FILE *fp;
+  int numIUB = 0;
 
   if (DEBUG >= 3)
     printf("build_eles(): Called...\n");
@@ -1565,12 +1570,25 @@ build_eles(char *filename)
     }
     else
     {
-      ele[N][x] = char_to_num(c);
+      n = char_to_num(c);
+      // IUB codes are problematic.  We replace them with
+      // a random base (0-3).  The rand() function is 
+      // allowed to have the fixed (default) seed of '1'
+      // so that multiple runs will give the same result.
+      if ( n == 99 ) 
+      {
+        numIUB++;
+        n = rand() % 4;
+      }
+      ele[N][x] = n;
       elei[N][x] = 0;
       x++;
     }
   }
   fclose(fp);
+
+  if ( numIUB )
+    printf("INFO: The input sequences contain %d occurrences of IUB\n      symbols.  These have been replaced automatically by randomly choosing a nucleotide\n      base in each case.\n\n", numIUB );
 
   return;
 }                               // void build_eles(...
@@ -1601,12 +1619,11 @@ compute_tri_bestmut()
   }
 
   // Setting existing val for all subfamilies
-  //printf("Setting existingval\n");
   for (s = 0; s < S; s++)
     for (x = 0; x < conLen; x++)
       existingval[x][pattern[s][x]] = 1;
 
-  // debug
+  // DEBUG
   if ( 0 ) 
   {
     for (s = 0; s < S; s++)
@@ -1627,7 +1644,7 @@ compute_tri_bestmut()
       }
       printf("\n");
     }
-  }
+  } // END DEBUG
 
   // Create a sorted ( by subfamily ) list of elements.
   for (x = 0; x < N; x++)
@@ -1760,6 +1777,7 @@ compute_tri_bestmut()
                       && (xxx > 0) && (pattern[SS][xxx - 1] == 1))
                     continue;
                 }
+//
 // TODO: Consider why we don't run EM to check that these three mutations
 //       stay after rebuilding the local consensus pair....
 //
@@ -1904,27 +1922,29 @@ compute_bestmut()
     for (x = 0; x < conLen; x++)
       existingval[x][pattern[s][x]] = 1;
 
-if ( 0 ) 
-{
-  for (s = 0; s < S; s++)
+  // DEBUG 
+  if ( 0 ) 
   {
-printf("Subfamily %d: ", s );
-    for (x = 0; x < conLen; x++)
+    for (s = 0; s < S; s++)
     {
-if ( pattern[s][x] == 0 )
-  printf("A");
-else if ( pattern[s][x] == 1 )
-  printf("C");
-else if ( pattern[s][x] == 2 )
-  printf("G");
-else if ( pattern[s][x] == 3 )
-  printf("T");
-else 
-  printf("-");
+      printf("Subfamily %d: ", s );
+      for (x = 0; x < conLen; x++)
+      {
+        if ( pattern[s][x] == 0 )
+          printf("A");
+        else if ( pattern[s][x] == 1 )
+          printf("C");
+        else if ( pattern[s][x] == 2 )
+          printf("G");
+        else if ( pattern[s][x] == 3 )
+          printf("T");
+        else 
+          printf("-");
+      }
+      printf("\n");
     }
-printf("\n");
   }
-}
+  // END DEBUG
 
   bestmutpvalue = PVALUETHRESH;
   printf("  Searching for significant double mutation:");
@@ -2102,7 +2122,7 @@ printf("\n");
 
             // RMH: Experimental
             // TODO: Optimize
-            if ( S > 0 )
+            if ( FORCE_DIAGNOSTIC_POS && S > 0 )
             {
               int status = build_local_global( x, a, xx, aa, SS );
               if ( status == 0 )
@@ -3026,39 +3046,39 @@ if ( 0 )
   // adjusts all elements and all consensi.
   run_em();
 
-
-if ( 0 ) 
-{
-  printf("Validating Initial Diagnostic Sites: %d: ",bestmutx);
-  if(pattern[S-1][bestmutx] != bestmuta) 
-    printf("No  ");
-  else
-    printf("Yes ");
-  printf("%d: ", bestmutxx);
-  if(pattern[S-1][bestmutxx] != bestmutaa) 
-    printf("No\n");
-  else
-    printf("Yes\n");
-  printf("%d: ", bestmutxxx);
-  if(pattern[S-1][bestmutxxx] != bestmutaaa) 
-    printf("No\n");
-  else
-    printf("Yes\n");
-
-  printf("Validation of diagnostic distribution:\n");
-  printf("   - pos=%d: ", bestmutx );
-  for ( x = 0; x < 5; x++ )
-    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutx][x] );
-  printf("\n");
-  printf("   - pos=%d: ", bestmutxx );
-  for ( x = 0; x < 5; x++ )
-    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxx][x] );
-  printf("\n");
-  printf("   - pos=%d: ", bestmutxxx );
-  for ( x = 0; x < 5; x++ )
-    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxxx][x] );
-  printf("\n");
-}
+  // DEBUG
+  if ( 0 ) 
+  {
+    printf("Validating Initial Diagnostic Sites: %d: ",bestmutx);
+    if(pattern[S-1][bestmutx] != bestmuta) 
+      printf("No  ");
+    else
+      printf("Yes ");
+    printf("%d: ", bestmutxx);
+    if(pattern[S-1][bestmutxx] != bestmutaa) 
+      printf("No\n");
+    else
+      printf("Yes\n");
+    printf("%d: ", bestmutxxx);
+    if(pattern[S-1][bestmutxxx] != bestmutaaa) 
+      printf("No\n");
+    else
+      printf("Yes\n");
+  
+    printf("Validation of diagnostic distribution:\n");
+    printf("   - pos=%d: ", bestmutx );
+    for ( x = 0; x < 5; x++ )
+      printf("%c=%d, ", num_to_char(x), count[S-1][bestmutx][x] );
+    printf("\n");
+    printf("   - pos=%d: ", bestmutxx );
+    for ( x = 0; x < 5; x++ )
+      printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxx][x] );
+    printf("\n");
+    printf("   - pos=%d: ", bestmutxxx );
+    for ( x = 0; x < 5; x++ )
+      printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxxx][x] );
+    printf("\n");
+  }
  
 } // build_new_tri_subfamily
 
@@ -3133,35 +3153,34 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
     fprintf(stdout, "\n");
   }
 
-// Special DEBUG
-if ( 0 ) 
-{
-    fprintf(stdout, "Current Cons: ");
-    for (x = 0; x < conLen; x++)
-    {
-      if (x == bestmutx || x == bestmutxx)
-        if ( pattern[SS][x] == 4 )
-          fprintf(stdout, "^");
-        else
-          fprintf(stdout, "%c", toupper(num_to_char(pattern[SS][x])));
-      else
-        fprintf(stdout, "%c", num_to_char(pattern[SS][x]));
-    }
-    int numWithMut = 0;
-    int numTotal = 0;
-    for (n = 0; n < N; n++)
-    {
-      if (assign[n] == SS)
+  // DEBUG
+  if ( 0 ) 
+  {
+      fprintf(stdout, "Current Cons: ");
+      for (x = 0; x < conLen; x++)
       {
-        numTotal++;
-        if ( ele[n][bestmutx] == bestmuta && ele[n][bestmutxx] == bestmutaa )
-          numWithMut++;
+        if (x == bestmutx || x == bestmutxx)
+          if ( pattern[SS][x] == 4 )
+            fprintf(stdout, "^");
+          else
+            fprintf(stdout, "%c", toupper(num_to_char(pattern[SS][x])));
+        else
+          fprintf(stdout, "%c", num_to_char(pattern[SS][x]));
       }
-    }
-    fprintf(stdout, "Parent size %d subset with both muts %d,", numTotal, numWithMut );
-}
-// End special debug
-
+      int numWithMut = 0;
+      int numTotal = 0;
+      for (n = 0; n < N; n++)
+      {
+        if (assign[n] == SS)
+        {
+          numTotal++;
+          if ( ele[n][bestmutx] == bestmuta && ele[n][bestmutxx] == bestmutaa )
+            numWithMut++;
+        }
+      }
+      fprintf(stdout, "Parent size %d subset with both muts %d,", numTotal, numWithMut );
+  }
+  // End DEBUG
 
   // Initialize the new subfamily count/bicount datastructure
   for (x = 0; x < conLen; x++)
@@ -3191,6 +3210,8 @@ if ( 0 )
     // should move over to the new subfamily.
     if ((assign[n] == SS) && (localassign[n] == 1))
     {
+
+// Not necessary now
 if ( 0 ) {
       // If so...move it's counts
       for (x = 0; x < conLen; x++)
@@ -3238,30 +3259,30 @@ if ( 0 ) {
   // until everything settles down.
   run_em();
 
-
-if ( 0 ) 
-{
-  printf("Validating Initial Diagnostic Sites: %d: ",bestmutx);
-  if(pattern[S-1][bestmutx] != bestmuta) 
-    printf("No  ");
-  else
-    printf("Yes ");
-  printf("%d: ", bestmutxx);
-  if(pattern[S-1][bestmutxx] != bestmutaa) 
-    printf("No\n");
-  else
-    printf("Yes\n");
-  printf("Validation of diagnostic distribution:\n");
-  printf("   - pos=%d: ", bestmutx );
-  for ( x = 0; x < 5; x++ )
-    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutx][x] );
-  printf("\n");
-  printf("   - pos=%d: ", bestmutxx );
-  for ( x = 0; x < 5; x++ )
-    printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxx][x] );
-  printf("\n");
-}
- 
+  // DEBUG
+  if ( 0 ) 
+  {
+    printf("Validating Initial Diagnostic Sites: %d: ",bestmutx);
+    if(pattern[S-1][bestmutx] != bestmuta) 
+      printf("No  ");
+    else
+      printf("Yes ");
+    printf("%d: ", bestmutxx);
+    if(pattern[S-1][bestmutxx] != bestmutaa) 
+      printf("No\n");
+    else
+      printf("Yes\n");
+    printf("Validation of diagnostic distribution:\n");
+    printf("   - pos=%d: ", bestmutx );
+    for ( x = 0; x < 5; x++ )
+      printf("%c=%d, ", num_to_char(x), count[S-1][bestmutx][x] );
+    printf("\n");
+    printf("   - pos=%d: ", bestmutxx );
+    for ( x = 0; x < 5; x++ )
+      printf("%c=%d, ", num_to_char(x), count[S-1][bestmutxx][x] );
+    printf("\n");
+  }
+   
   if (VERBOSE > 4)
   {
     fprintf(stdout, "\nFinal Family Sizes: ");
@@ -3269,7 +3290,6 @@ if ( 0 )
       fprintf(stdout, "%d,", assigncount[s]);
     fprintf(stdout, "\n");
   }
-
 
 }
 
@@ -3294,14 +3314,13 @@ run_em()
 
   SS = bestmutSS;
 
-  // TODO: Hmmmm...why why why? I wish I had documented this!
-  // RMH added 11/7/2012
   //
+  // Assignments and pattern are up to date.  No need
+  // to run assign_to_pattern
+  //
+  // RMH added 11/7/2012
   // Take element assignments and rebuild consensi stored
   // in pattern[][] and patterni[][]
-  //
-  //  This shouldn't do anything because assignments and pattern 
-  //  are up-to-date.
   //assign_to_pattern();          /* M-step */
 
   if (VERBOSE & 4)
@@ -3348,8 +3367,10 @@ run_em()
       fprintf(stdout, "\n");
     }
 
-    // TODO: Doesn't this lead to the counts being out-of-step with the patterns?  Should we roll-back the assignment changes?
-    //       Or...probably Alkes considered the pattern authoritative and the assignment should be derived whenever needed.
+    // TODO: Doesn't this lead to the counts being out-of-step with the patterns?  
+    //       Should we roll-back the assignment changes?
+    //       Or...probably Alkes considered the pattern authoritative and the 
+    //       assignment should be derived whenever needed.
     if (totdist >= oldtotdist)
       break;
 
@@ -3389,9 +3410,10 @@ run_em()
       printf("S=%d run_em iter %d, totdist=%d\n", S, iter, totdist);
     }
   }
+
+  //
   // RMH: 11/2/2012 : Shouldn't the pattern now reflect the last step
   //                  of reassignment???  Adding this
-  //TODO: RMH:....um..no
   //assign_to_pattern();          /* M-step */
 
   if (VERBOSE & 4)
@@ -4255,46 +4277,15 @@ char_to_num(char c)
     return 3;
   if (c == '-')
     return 4;
-  if (c == 'N')
+  if (c == 'N' || c == 'n' || c == 'B' ||
+      c == 'b' || c == 'D' || c == 'd' ||
+      c == 'H' || c == 'h' || c == 'V' ||
+      c == 'v' || c == 'R' || c == 'r' ||
+      c == 'K' || c == 'k' || c == 'M' ||
+      c == 'm' || c == 'S' || c == 's' ||
+      c == 'W' || c == 'w') {
     return 99;
-  if (c == 'n')
-    return 99;
-  if (c == 'B')
-    return 99;
-  if (c == 'b')
-    return 99;
-  if (c == 'D')
-    return 99;
-  if (c == 'd')
-    return 99;
-  if (c == 'H')
-    return 99;
-  if (c == 'h')
-    return 99;
-  if (c == 'V')
-    return 99;
-  if (c == 'v')
-    return 99;
-  if (c == 'R')
-    return 99;
-  if (c == 'r')
-    return 99;
-  if (c == 'K')
-    return 99;
-  if (c == 'k')
-    return 99;
-  if (c == 'M')
-    return 99;
-  if (c == 'm')
-    return 99;
-  if (c == 'S')
-    return 99;
-  if (c == 's')
-    return 99;
-  if (c == 'W')
-    return 99;
-  if (c == 'w')
-    return 99;
+  }
   printf("char_to_num(): Invalid DNA character c=%d=%c\n", c, c);
   printf("               Check your sequence file for non DNA letters.\n");
   printf
@@ -5510,8 +5501,6 @@ build_MST_scaffold(char *filename)
   // parent[] array is being reused here.  It was previously used to hold 
   //          the source subfamily for each derived subfamily. Here it 
   //          appears to be used to hold the minimum spanning tree structure.
-  //parent[s0] = -1;
-  //  RMH: Why was this full-clear disabed in my version?
   for(s=0; s<S; s++) parent[s] = -1;
 
   root = s0;
@@ -6259,21 +6248,21 @@ pValueStr(double logpvalue)
   return pvStr;
 }
 
-
 //
 // build_MST_full() - originaly build_MST2 from fill_scaffold.c
 //
 //   Build a minimum spanning tree (MST) using scaffold +
 //   single point mutation derived subfamilies.  
 //
-//   In this tree build the insertion penalty is changes
-//   to SINGLE_MUTATION_INSPENALTY ( currently ) which differs
+//   Use modified Kimura divergence calculation that takes into
+//   account CpG sites ( see computeMutationRatesKimura() )
+//
+//   In this tree build the insertion penalty is 
+//   SINGLE_MUTATION_INSPENALTY ( currently ) which differs
 //   from the scaffold only MST build which uses 
 //   MULTIPLE_MUTATION_INSPENALTY
 //
-//   
-//
-//   Recomputes distance[][] using different insertion pentalty
+//   Recomputes distance[][] using different insertion penalty
 //
 //  Uses:
 //      edges[][]    : overwrites previous values
@@ -6371,8 +6360,8 @@ build_MST_full(char *filename)
     }
   }
   done[s0] = 1;
-// RMH:
-// was   parent[s0] = -1;
+  // RMH:
+  // was   parent[s0] = -1;
   for (s = 0; s < S; s++)
     parent[s] = -1;
 

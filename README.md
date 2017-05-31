@@ -249,24 +249,18 @@ Usage:
 
 Version History
 ---------------
-  -.-.-:  
-  TODO: Print out a multiple alignment of the
-    subfamilies showing only the signficant
-    differences ( i.e. the "." and "i" method )   
-    and grouping them by tree/div order.
-            
+  0.2.3:
+  * IUB codes in input sequences caused the code to segfault.
+    Coseg will now randomly choose a nucleotide to substitute
+    each time it encounters one in in the input sequence. It
+    will also inform the user when doing so.  Thanks to David
+    Ray for reporting this and suggesting the fix.
   * Fixed the svg tag so that the files
     will directly load in HTML5 web browsers.
-  * Calculation of divergence has been improved(?). 
+  * Calculation of divergence has been improved.
     We now use kimura substition distance with CpG 
     site accounting modifications instead of the
     mixed substition and indel calculation.
-   * Require that the diagnostic mutations which 
-    broke up the parent family are maintained
-    after allowing all elements to be re-assigned.
-    Currently this is only coded for bi-mutations.
-    This is a major change and deserves to have
-    a flag allowing one not to use it.
 
   0.2.2:  
   * Create a *.svg graph file without the need
@@ -293,7 +287,7 @@ Version History
     script uses the RepeatModeler application to build
     and refine the consensus sequences for each 
     subfamily.
-  
+
   0.2.1:  
   * Improved code documentation
   * Single mutation significance cutoff ( SIGMATHRESH ) was 
