@@ -249,7 +249,7 @@ Usage:
 
 Version History
 ---------------
-  0.2.3:
+  In development: 
   * IUB codes in input sequences caused the code to segfault.
     Coseg will now randomly choose a nucleotide to substitute
     each time it encounters one in in the input sequence. It

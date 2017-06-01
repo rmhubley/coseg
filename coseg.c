@@ -140,7 +140,7 @@ int ***numer, ***denom;         /* MAXS*L*5 */
 double **mutfrac;               /* L*5 */
 int labels[MAXS];
 int **distance;                 /* MAXS*MAXS */
-int we_want_best_pvalue;
+int we_want_best_pvalue = 0;
 int **existingval;              /* L*5 */
 char *seqFile;                  /* Input sequences file */
 char *conFile;                  /* Consensus sequence file */
@@ -421,6 +421,15 @@ main(int argc, char **argv)
           }
         }
 
+// DEBUG
+printf("redisplaying counts:\n");
+    int uu = 0;
+    for( uu = 0; uu < S; uu++ )
+    {
+      printf("S=%d members = %d\n", uu, assigncount[uu]);
+    }
+// END DEBUG
+
       }
       minCount = origMinCount;
     }
@@ -451,10 +460,29 @@ main(int argc, char **argv)
       }
       fflush(outFP);
       sync();
+
+// DEBUG
+printf("redisplaying counts:\n");
+    int uu = 0;
+    for( uu = 0; uu < S; uu++ )
+    {
+      printf("S=%d members = %d\n", uu, assigncount[uu]);
+    }
+// END DEBUG
+
+
     }
 
     fprintf(outFP, "VERIFYING SUBFAMILIES (PRUNE IF NECESSARY)\n");
     printf("\nVERIFYING %d SUBFAMILIES (PRUNE IF NECESSARY)\n", S);
+
+// DEBUG
+    int uu = 0;
+    for( uu = 0; uu < S; uu++ )
+    {
+      printf("S=%d members = %d\n", uu, assigncount[uu]);
+    }
+// END DEBUG
 
     S_BEFORE_PRUNE = S;
     prune_subfamilies();
@@ -3001,9 +3029,6 @@ build_new_tri_subfamily()       /* parent, S, assign, pattern_to_assign */
     }
   }
 
-// Does nothing......for EM 
-if ( 0 ) 
-{
   // Initialy breakup up subfamily SS into SS & S.
   for (n = 0; n < N; n++)
   {
@@ -3030,8 +3055,9 @@ if ( 0 )
   }
   assigncount[SS] = localassigncount[0];
   assigncount[S] = localassigncount[1];
-}
 
+  // TODO: This is redundant due to the initial assign_to_pattern() call by 
+  // run_em();
   for (x = 0; x < conLen; x++)
   {
     pattern[SS][x] = localpattern[0][x];
@@ -3085,14 +3111,27 @@ if ( 0 )
 
 //
 // build_new_subfamily()
-//   Create a datastructure to hold new subfamily count/bicounts
-//   Move ( subtract/add ) counts from old subfamily to new datastructure
-//   Initialize new subfamily pattern datastructure
+// 
+//   Given two significant co-segregating mutations in an existing
+//   subfamily ( subfamily, pos1/mut1, pos2/mut2 ) break up the
+//   subfamily into two by:
+//      
+//        1. Use EM to iteratively assign the members of the subfamily
+//           into original/proposed consensus sequence groups, redevelop
+//           the consensus for each group and repeat.
+//
+//        2. Use EM to iteratively assign the members of all subfamilies
+//           into all subfamilies ( including the new one ), redevelop
+//           the subfamily consensi and repeat.
+//
+//  Assumed input:
+//    bestmutx, bestmuta, bestmutxx, bestmutaa, bestmutSS, S
 //
 //  Modifies:
-//      count[], counti[], and bicount[]
+//      count[], counti[], and bicount[], parent[], pattern, assign, assigncount
+//
 void
-build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
+build_new_subfamily()      
 {
   int n, s, x, a, xx, aa, SS, besta, bestb, b;
   int ccount[5], ccounti[2];
@@ -3104,13 +3143,23 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
   a = bestmuta;
   xx = bestmutxx;
   aa = bestmutaa;
-
-  /*
-     we are given bestmutSS, bestmutpos, bestmutval 
-   */
   SS = bestmutSS;
+
   parent[S] = SS;
-  build_local(x, a, xx, aa, SS);        /* local{pattern,assign} */
+
+  // Given an existing subfamily and a proposed bi-mutation pattern,
+  // run a isolated EM maximization between the existing consensus
+  // and the alternative separating members elements into these 
+  // to sets.  At the end localpattern[0] is the new consensus originating
+  // from the original consensus and localpattern[1] is the new cosensus
+  // originitating from the alternative consensus.  Also at the end
+  // the localassign[]=0/localassign[]=1 are the members of the original
+  // and alternative consensi respectively.
+  build_local(x, a, xx, aa, SS); 
+
+  // NOTE: at this stage it is possible that localpattern[1] does
+  //       not contain the two proposed mutations, although it is 
+  //       extremely unlikely it doesn't.
 
   fprintf(outFP,
           "Building subfamily %d (parent %d, logpvalue %e): pos %d %c to %c and pos %d %c to %c\n",
@@ -3206,14 +3255,12 @@ build_new_subfamily()           /* parent, S, assign, pattern_to_assign */
   // to the new subfamily.
   for (n = 0; n < N; n++)
   {
-    // Guesing that localassign is set when the element
-    // should move over to the new subfamily.
+    // build_local has setup the localassign[] array 
+    // with the new assignments:  0=parent subfamily and
+    // 1=new subfamily.
     if ((assign[n] == SS) && (localassign[n] == 1))
     {
-
-// Not necessary now
-if ( 0 ) {
-      // If so...move it's counts
+      // Move element to new subfamily
       for (x = 0; x < conLen; x++)
       {
         count[S][x][ele[n][x]]++;
@@ -3232,16 +3279,18 @@ if ( 0 ) {
         }
       }
       assign[n] = S;
-}
       totalAssigned++;
     }
   }
-//  assigncount[SS] = localassigncount[0];
-//  assigncount[S] = localassigncount[1];
+  // Just copy over the new counts from the build_local results.
+  assigncount[SS] = localassigncount[0];
+  assigncount[S] = localassigncount[1];
 
   //printf("build_new_subfamily(): totalAssigned = %d assigncount[%d] = %d, assigncount[%d] = %d\n", totalAssigned, SS, assigncount[SS], S, assigncount[S] );
   //printf("build_new_subfamily(): totalAssigned = %d assigncount[%d] = %d, assigncount[%d] = %d\n", totalAssigned, SS, localassigncount[0], S, localassigncount[1] );
 
+  // Now copy over the consensi defined by the build_local step.
+  //    -- Redundant due to initial assign_to_pattern() step done by run_em()
   for (x = 0; x < conLen; x++)
   {
     pattern[SS][x] = localpattern[0][x];
@@ -3302,6 +3351,10 @@ if ( 0 ) {
  * just added can steal members from other subfamilies
  * other than it's parent.
  *
+ * While it looks like this routine starts off with an
+ * "M-step" it does assume that the "E-step" was already
+ * performed by the caller as an initilization.
+ *
  * NOTE: After this is run there is currently no check to
  * see if the last added subfamily did maintain the two 
  * co-segregating sites.
@@ -3314,14 +3367,8 @@ run_em()
 
   SS = bestmutSS;
 
-  //
-  // Assignments and pattern are up to date.  No need
-  // to run assign_to_pattern
-  //
-  // RMH added 11/7/2012
-  // Take element assignments and rebuild consensi stored
-  // in pattern[][] and patterni[][]
-  //assign_to_pattern();          /* M-step */
+  // Take assignments and rebuild patterns
+  assign_to_pattern();          /* M-step */
 
   if (VERBOSE & 4)
   {
@@ -4283,7 +4330,8 @@ char_to_num(char c)
       c == 'v' || c == 'R' || c == 'r' ||
       c == 'K' || c == 'k' || c == 'M' ||
       c == 'm' || c == 'S' || c == 's' ||
-      c == 'W' || c == 'w') {
+      c == 'W' || c == 'w' || c == 'y' ||
+      c == 'Y' ) {
     return 99;
   }
   printf("char_to_num(): Invalid DNA character c=%d=%c\n", c, c);
@@ -4483,6 +4531,7 @@ prune_subfamilies()
   FILE *fp;
 
   // Run EM just to get everything squared away
+  // TODO: Check that this has everything initialized as expected 
   run_em();
 
   // This calculates numer/denom for thefactor mutfrac[] which is used only in 
@@ -4882,6 +4931,8 @@ union_tri_pvalue(int label)
           if ((pvalue <= PVALUETHRESH) && (we_want_best_pvalue == 0))
           {
             //printf("Found good enough bi-pvalue = %lf\n", pvalue );
+            free( interesting );
+            free( consensus );
             return pvalue;
           }
           if (pvalue < bestpvalue)
@@ -5005,6 +5056,8 @@ union_tri_pvalue(int label)
               if ((pvalue <= PVALUETHRESH) && (we_want_best_pvalue == 0))
               {
                 printf("Found good enough tri-pvalue = %lf\n", pvalue);
+                free( interesting );
+                free( consensus );
                 return pvalue;
               }
               if (pvalue < bestpvalue)
