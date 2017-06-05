@@ -5532,6 +5532,7 @@ build_MST_scaffold(char *filename)
   for (s = 0; s < S; s++)
     done[s] = 0;
 
+  // TODO: Consider using Kimura to set tree root.
   s0 = 0;
   s0age = 0.0;
   for (s = 0; s < S; s++)
@@ -6348,18 +6349,26 @@ build_MST_full(char *filename)
   double maxMutRate = 0.0;
   int maxCount = 0;
   double mutRateRange = 0.0;
+  int minMutRateFam = -1;
+  int maxMutRateFam = -1;
   for (s = 0; s < S; s++)
   {
-    if (mutrate_CpGMod[s] > maxMutRate)
+    if (mutrate_CpGMod[s] > maxMutRate){
+      maxMutRateFam = s;
       maxMutRate = mutrate_CpGMod[s];
-    if (mutrate_CpGMod[s] < minMutRate)
+    }
+    if (mutrate_CpGMod[s] < minMutRate){
+      minMutRateFam = s;
       minMutRate = mutrate_CpGMod[s];
+    }
     if (assigncount[s] > maxCount)
       maxCount = assigncount[s];
   }
   mutRateRange = maxMutRate - minMutRate;
   if (mutRateRange == 0)
     mutRateRange = 1.0;
+
+  printf("Kimura Divergence Range: %2.2f (sub-%d) - %2.2f (sub-%d)\n", minMutRate, minMutRateFam, maxMutRate, maxMutRateFam );
 
   for (s = 0; s < S; s++)
     isleaf[s] = 1;
@@ -6391,9 +6400,8 @@ build_MST_full(char *filename)
     fprintf(fp, "        size=\"8,10\";\n");
   }
 
-  /*
+  /* 
      choose the oldest subfamily s0 
-   */
   for (s = 0; s < S; s++)
     done[s] = 0;
   s0 = 0;
@@ -6413,6 +6421,13 @@ build_MST_full(char *filename)
     }
   }
   done[s0] = 1;
+  printf("max age was determined to be %0.2f in %d\n", s0age, s0);
+  */
+
+  // RMH: Use Kimura average divergence to set the root of the tree. 6/1/2017
+  s0=maxMutRateFam;
+  done[s0] = 1;
+
   // RMH:
   // was   parent[s0] = -1;
   for (s = 0; s < S; s++)
