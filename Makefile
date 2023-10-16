@@ -1,7 +1,7 @@
 ##
 ## Makefile for coseg project
 ##
-VERSION=dev
+VERSION=0.2.3
 INSTALLDIR=/usr/local/coseg-${VERSION}
 
 ## Basic
