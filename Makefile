@@ -5,9 +5,9 @@ VERSION=dev
 INSTALLDIR=/usr/local/coseg-${VERSION}
 
 ## Basic
-CC = cc -g -O4 -lm
+CC = cc -g -O4
 ## A nice memory leak checker:
-#CC = bgcc -O4 -fbounds-checking -lm
+#CC = bgcc -O4 -fbounds-checking
 
 all: coseg 
 
@@ -15,7 +15,7 @@ version.c: Makefile
 	echo "char const* Version = \"$(VERSION)\";" > version.c
 
 coseg: version.o coseg.o
-	${CC} version.o coseg.o -o coseg 
+	${CC} version.o coseg.o -o coseg -lm
 
 beautify:
 	indent -bap -cdb -bl -bli0 -npcs -nut -lp coseg.c
