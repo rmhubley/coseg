@@ -261,7 +261,10 @@ Version History
     We now use kimura substition distance with CpG 
     site accounting modifications instead of the
     mixed substition and indel calculation.
-
+ 
+  0.2.3:
+  * Update to Makefile to support newer toolchains
+    
   0.2.2:  
   * Create a *.svg graph file without the need
     to download/use GraphViz.  The layout is
