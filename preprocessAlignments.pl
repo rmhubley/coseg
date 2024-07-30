@@ -220,15 +220,34 @@ if ( $RMResults->size() )
   # Determine the data set's actual min/max cons positions
   my $actualMinStart = $conSize;
   my $actualMaxEnd = 0;
+  my @startHisto = ();
+  my @endHisto = ();
   for ( my $k = 0 ; $k < $RMResults->size() ; $k++ ) 
   {
     my $start = $RMResults->get( $k )->getSubjStart();
     my $end = $RMResults->get( $k )->getSubjEnd();
+    $startHisto[$start]++;
+    $endHisto[$end]++;
     $actualMinStart = $start if ( $start < $actualMinStart );
     $actualMaxEnd = $end if ( $end > $actualMaxEnd );
   }
   print "Consensus range: 1 - $conSize\n";
   print "Aligned data consensus range: $actualMinStart - $actualMaxEnd\n";
+
+  # Look for maximal start position (given edge tolerance)
+  my $maxStartCnt = 0;
+  my $maxStartPos = 0;
+  for ( my $k = 1; $k <= $#startHisto; $k++ ){
+    my $totalCnt = 0;
+    for ( my $l = $k; $l < $k + $maxEdgeGap; $k++ ){
+      $totalCnt += $startHisto[$l];
+    }
+    if ( $totalCnt > $maxStartCnt ) {
+      $maxStartCnt = $totalCnt;
+      $maxStartPos = $k;
+    }
+  }
+  print "Maximal start position = $maxStartPos with count = $maxStartCnt\n";
 
   # min/max cons range
   my $maxConsRange = $actualMaxEnd;

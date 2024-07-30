@@ -498,7 +498,7 @@ printf("redisplaying counts:\n");
     }
     if ((B > 0) && (S == S_AFTER_PRUNE[B - 1]))
     {
-      fprintf(outFP, "S_AFTER_PRUNE=%d AFTER BIG ITER\n", B, S);
+      fprintf(outFP, "S_AFTER_PRUNE=%d AFTER BIG ITER (B=%d)\n", S, B);
       break;
     }
   }
@@ -1419,7 +1419,7 @@ inverseNormalCDF(double x)
   double t, numerator, denominator;
   if (!((0 < x) && (x <= 0.5)))
   {
-    printf("Warning: x = %lf, x must be between 0 and 0.5\n");
+    printf("Warning: x = %lf, x must be between 0 and 0.5\n", x);
     return 0;
   }
   t = sqrt(log(1 / (x * x)));
@@ -5704,7 +5704,7 @@ print_subfamily(int s)
           s, parent[s], assigncount[s], sage, sage2);
   for (x = 0; x < conLen; x++)
   {
-    fprintf(outFP, "%c", x, num_to_char(pattern[s][x]));
+    fprintf(outFP, "%c", num_to_char(pattern[s][x]));
   }
   fprintf(outFP, "\n");
 
@@ -5802,10 +5802,13 @@ compute_bestmut1()
         }
 
         emutfrac = age[SS] * mutperage[pattern[SS][x]][x][a];
+
         if ((emutfrac < 0.0) || (emutfrac > 1.0))
         {
-          printf("OOPS emutfrac=%f\n", emutfrac);
-          exit(1);
+	        printf("compute_bestmut1(): WARNING - emutfrac is not within range ( 0-1 ): %f\n",emutfrac);
+          printf("  This came from SS=%d, x=%d, a=%d: age[SS]=%f and pattern[SS][x]=%d, and mutperage[pattern[SS][x]][a]=%f\n",
+                  SS, x, a, age[SS], pattern[SS][x], mutperage[pattern[SS][x]][x][a] );
+	        emutfrac = 1.0;
         }
         sigma = compute_sigma(assigncount[SS], count[SS][x][a], emutfrac);
         // DEBUG
@@ -5815,7 +5818,7 @@ compute_bestmut1()
           continue;
 
         /*
-           One last check to make sure result is not distance 0 from any subf 
+         * One last check to make sure result is not distance 0 from any subf
          */
         for (x0 = 0; x0 < conLen; x0++)
         {
@@ -5940,14 +5943,22 @@ assign_to_pattern_singlemut()
   {
     for (x = 0; x < conLen; x++)
     {
-      // By this calculation age[s] will be a number between 0-200.  
+      // By this calculation age[s] will be a number between 0-(conLen*2).
       //   - I suspect Alkes assumed that for Alu it probably wouldn't
-      //     exceed 100.  
+      //     exceed 100.
       age[s] += ((double) 1.0) - profile[s][x][pattern[s][x]];
-      age[s] += ((double) 1.0) - profilei[s][x][patterni[s][x]];
+      // While insertions do represent a change in edit distance from the
+      // consensus it's unclear how to merge this with the substitution
+      // details at a given position. Alkes added both of these to age leading
+      // to a value between 0-(conLen*2) at most.  But then converting this
+      // back to a divergence by dividing by (conLen*2) does not seem right either.
+      // I am going to use substitution edit distance as an adequate calculation
+      // for age and comment this out.
+      //age[s] += ((double) 1.0) - profilei[s][x][patterni[s][x]];
     }
     // New: Scale result back to 0-100
-    age[s] = (age[s] / 200) * 100;
+    // age[s] = (age[s] / 200) * 100;
+    age[s] = (age[s] / conLen) * 100;
     //printf("assign_pat_to_sing_mut: age[%d] = %f , patterni[43][0] = %d\n", s,
     //       age[s], patterni[43][0]);
   }
@@ -6400,10 +6411,9 @@ build_MST_full(char *filename)
     fprintf(fp, "        size=\"8,10\";\n");
   }
 
-  /* 
-     choose the oldest subfamily s0 
   for (s = 0; s < S; s++)
     done[s] = 0;
+  /* choose the oldest subfamily s0 
   s0 = 0;
   s0age = 0.0;
   for (s = 0; s < S; s++)
@@ -6438,7 +6448,7 @@ build_MST_full(char *filename)
   {
     // Circle area is proportional to the size of the subfamily 
     diameter = (double) 2.0 *sqrt((double) assigncount[s0] / (double) maxCount);
-  
+
     // Color heatmap ranges from 0-0.6 ( or 0-216 degrees )
     if (useOriginalGraphColors)
       hue = ((mutrate_CpGMod[s0] - minMutRate) * (double) 0.6) / mutRateRange;
@@ -6781,7 +6791,7 @@ build_singlemut_MST()
         if ((emutfrac < 0.0) || (emutfrac > 1.0))
         {
           printf
-            ("OOPS emutfrac=%f age[%d]=%f mutperage[ pattern[%d][%d] = %d ][%d][%d] = %f\n",
+            ("ERROR1: emutfrac=%f age[%d]=%f mutperage[ pattern[%d][%d] = %d ][%d][%d] = %f\n",
              emutfrac, s, age[s], s, x, pattern[s][x], x, a,
              mutperage[pattern[s][x]][x][a]);
           //exit(1);
@@ -6895,8 +6905,12 @@ build_singlemut_MST()
         emutfrac = age[t] * mutperage[pattern[t][x]][x][a];
         if ((emutfrac < 0.0) || (emutfrac > 1.0))
         {
-          printf("OOPS emutfrac=%f\n", emutfrac);
-          exit(1);
+          printf ("ERROR2: emutfrac=%f age[%d]=%f mutperage[ pattern[%d][%d] = %d ][%d][%d] = %f\n", emutfrac, t, age[t], t, x, pattern[t][x], x, a, mutperage[pattern[t][x]][x][a]);
+          if (emutfrac < 0)
+            emutfrac = 0;
+          if (emutfrac > 1.0)
+            emutfrac = 1.0;
+          //exit(1);
         }
         sigma = compute_sigma(assigncount[t], count[t][x][a], emutfrac);
         //printf("Pos=%d %c -> %c %lf\n", x, num_to_char( pattern[t][x] ), num_to_char( a ), sigma );
@@ -7214,11 +7228,11 @@ print_subfamilies(int S)
   computeMutationRatesKimura(mutrate, mutrate2);
 
   /*
-     print subfamilies 
+     print subfamilies
    */
   if (S == MAXS)
   {
-    printf("OOPS S=MAXS=%d\n", S, MAXS);
+    printf("OOPS S=MAXS=%d\n", S);
     exit(1);
   }
 

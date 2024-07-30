@@ -244,12 +244,21 @@ to determine which sequences belong to the queried subfamily number.
 
 Usage:
 
+  1. From the directory where your coseg results can be
+     found run:
 
+          extractSubSeqs.pl -subNum # -seqFile mycosegrun.seqs 
+                            [-fastaDB <fasta file>] [-flankBases #]
 
+     Where "mycosegrun" is the prefix of the coseg run. The optional 
+     fastaDB option supports the extraction of the sequence along with
+     flanking regions ( by default 100 bp).  The flankBases option
+     allows you to specify the number of bases to include in the flanking
+     region.
 
 Version History
 ---------------
-  In development: 
+  0.2.4:         
   * IUB codes in input sequences caused the code to segfault.
     Coseg will now randomly choose a nucleotide to substitute
     each time it encounters one in in the input sequence. It
@@ -261,6 +270,8 @@ Version History
     We now use kimura substition distance with CpG 
     site accounting modifications instead of the
     mixed substition and indel calculation.
+  * Produce a warning if emutfrac is not within expected
+    range, rather than crashing.
  
   0.2.3:
   * Update to Makefile to support newer toolchains
